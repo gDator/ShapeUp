@@ -1,0 +1,22 @@
++: done
+- tbd
+* next in pipeline
+x discarded
+i just for information
+B-1: bug number
+F-1: feature number
+HISTORY - BUGFIXES
+=======================================================================
+v0.1
++ 2024/06/08: created CMake project and ported to windows
+
+BUGS
+=======================================================================
+- 20240608-1:
+
+TODO
+=======================================================================
+--------------------------------v0.0-----------------------------------
+- boolean operations on different shapes
+- scaleable code structure
+- implement all "basic" sdf functions (s. https://iquilezles.org/)
