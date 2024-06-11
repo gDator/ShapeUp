@@ -1,7 +1,7 @@
 out vec4 finalColor;
 // int vec2 texCoord;
-uniform vec3 viewEye; 
-uniform vec3 viewCenter; 
+uniform vec3 viewEye;
+uniform vec3 viewCenter;
 uniform vec2 resolution;
 
 vec4 castRay( in vec3 ro, in vec3 rd )

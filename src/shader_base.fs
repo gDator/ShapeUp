@@ -160,7 +160,7 @@ void main()
                 vec3 t = ro + dist*ray_direction;
                 float sdf_value = signed_distance_field(t).x;
                 vec4 field_color = (sdf_value < 0. ? 
-                                    vec4(1.,0.,0., sin(sdf_value*8.+runTime*2.)/4. + 0.25): 
+                                    vec4(1.,0.,0., sin(sdf_value*8.+runTime*2.)/4. + 0.25):
                                     vec4(0.15, 0.15,0.8,sin(sdf_value*8.-runTime*2.)/4. + 0.25 )) ;
 
                 col = mix(col, field_color.rgb, field_color.a);

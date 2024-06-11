@@ -1,13 +1,18 @@
 cmake_minimum_required(VERSION 3.28)
 project(ShapeUp)
-include_directories(./src)
+include_directories(./include)
 set(CMAKE_CXX_STANDARD 20)
 set(SHAPE_UP_SOURCE
-        src/dark.h
+        include/dark.h
         src/main.cpp
-        src/shader.h
-        src/shader.cpp
-        src/imconfig.h
+        include/ShaderLoader.h
+        src/ShaderLoader.cpp
+        include/imconfig.h
+        src/SDFCreatorGui.cpp
+        include/SDFCreatorGui.h
+        include/SDFCreator.h
+        src/SDFCreator.cpp
+        include/SDFObject.h
 )
 add_subdirectory(./vendor)
 add_executable(ShapeUp

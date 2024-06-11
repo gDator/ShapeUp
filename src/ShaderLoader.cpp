@@ -1,10 +1,10 @@
 //
 // Created by Daniel Hagen on 08.06.2024.
 //
-#include "shader.h"
+#include "../include/ShaderLoader.h"
 #include <fstream>
 #include <iostream>
-void ShaderFiles::loadShader()
+void ShaderLoader::loadShader()
 {
     loadFile("../src/shader_base.fs", m_shader_base_fs);
     loadFile("../src/shader_prefix.fs", m_shader_prefix_fs);
@@ -12,7 +12,7 @@ void ShaderFiles::loadShader()
     loadFile("../src/selection.fs", m_selection_fs);
 }
 
-void ShaderFiles::loadFile(const std::filesystem::path& file_path, std::string& output)
+void ShaderLoader::loadFile(const std::filesystem::path& file_path, std::string& output)
 {
     if(std::filesystem::exists(file_path))
     {

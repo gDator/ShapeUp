@@ -7,14 +7,14 @@
 
 #include <string>
 #include <filesystem>
-class ShaderFiles
+class ShaderLoader
 {
 public:
     void loadShader();
-    inline const char* getShaderPrefixFS() {return m_shader_prefix_fs.c_str();}
-    inline const char* getShaderBaseFS() {return m_shader_base_fs.c_str();}
-    inline const char* getSlicerBodyFS() {return m_slicer_body_fs.c_str();}
-    inline const char* getSelectionFS() {return m_selection_fs.c_str();}
+    inline const std::string& getShaderPrefixFS() {return m_shader_prefix_fs;}
+    inline const std::string& getShaderBaseFS() {return m_shader_base_fs;}
+    inline const std::string& getSlicerBodyFS() {return m_slicer_body_fs;}
+    inline const std::string& getSelectionFS() {return m_selection_fs;}
 
 private:
     std::string m_shader_prefix_fs{};
