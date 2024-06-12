@@ -13,7 +13,6 @@ SDFCreator::SDFCreator()
 {
     m_last_save = GetTime();
     m_shader_files.loadShader();
-    addShape({0, 255, 0});
     m_selected_sphere = -1;
 }
 void SDFCreator::rebuildShaders()
@@ -26,11 +25,11 @@ void SDFCreator::rebuildShaders()
 
     std::string result = "";
     result += SHADER_VERSION_PREFIX "out vec4 finalColor;\n"
-           "uniform vec3 viewEye; \n"
-           "uniform vec3 viewCenter; \n"
-           "uniform float runTime; \n"
-           "uniform float visualizer; \n"
-           "uniform vec2 resolution;\n";
+                                    "uniform vec3 viewEye; \n"
+                                    "uniform vec3 viewCenter; \n"
+                                    "uniform float runTime; \n"
+                                    "uniform float visualizer; \n"
+                                    "uniform vec2 resolution;\n";
     result += m_shader_files.getShaderPrefixFS();
     result += map_function;
     result += m_shader_files.getShaderBaseFS();
@@ -89,7 +88,7 @@ void SDFCreator::save(std::filesystem::path path)
     *(int*)(void*)data = m_num_spheres;
     memcpy(data + sizeof(int), m_objects.data(), m_num_spheres * sizeof(SDFObject));
 
-    SaveFileData(path.string().c_str(), data, size);
+    SaveFileData(path.string().c_str() , data, size);
 
     std::free(data);
     m_last_save = GetTime();
@@ -112,7 +111,7 @@ void SDFCreator::openSnapshot(std::filesystem::path path)
     m_last_save = GetTime();
 }
 
-bool SDFCreator::loadShader(const Camera& camera)
+bool SDFCreator::loadShader(const Camera& camera, bool field_mode)
 {
     if (m_needs_rebuild)
     {
@@ -128,7 +127,7 @@ bool SDFCreator::loadShader(const Camera& camera)
         (float[2]){(float)GetScreenWidth() * GetWindowScaleDPI().x, (float)GetScreenHeight() * GetWindowScaleDPI().y},
         SHADER_UNIFORM_VEC2);
     SetShaderValue(m_main_shader, m_main_locations.run_time, &m_run_time, SHADER_UNIFORM_FLOAT);
-    float mode = visuals_mode;
+    float mode = static_cast<float>(field_mode);
     SetShaderValue(m_main_shader, m_main_locations.visualizer, &mode, SHADER_UNIFORM_FLOAT);
     loadData();
     if (IsShaderReady(m_main_shader))
@@ -417,11 +416,17 @@ void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
     UnloadShader(shader);
 
     std::cout << "picking object took " << (int)((-start + GetTime()) * 1000) << "ms\n";
-
+    int old_selected = m_selected_sphere;
     if (object_index >= 0 && object_index < m_objects.size())
     {
         m_selected_sphere = object_index;
+        if (m_selected_sphere != old_selected)
+        {
+            rebuild();
+        }
     }
+
+    std::cout << object_index << std::endl;
 }
 bool SDFCreator::isSelected() const
 {
@@ -615,15 +620,15 @@ void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index,
         if (i == dynamic_index)
         {
             map += std::format("\tdistance = {}(\n"
-                              "\t\tvec4(RoundBox(\n"
-                              "\t\t\t\topRotateXYZ(\n"
-                              "\t\t\t\t\t{}(pos) - selectionValues[0], // position\n"
-                              "\t\t\t\t\tselectionValues[1]), // angle\n"
-                              "\t\t\t\tselectionValues[2],  // size\n"
-                              "\t\t\t\tselectionValues[4].x), // corner radius\n"
-                              "\t\t\tselectionValues[3]), // color\n"
-                              "\t\tdistance,\n\t\tselectionValues[4].y); // blobbyness\n",
-                              s.subtract ? "opSmoothSubtraction" : "BlobbyMin", symmetry[mirror_index]);
+                               "\t\tvec4(RoundBox(\n"
+                               "\t\t\t\topRotateXYZ(\n"
+                               "\t\t\t\t\t{}(pos) - selectionValues[0], // position\n"
+                               "\t\t\t\t\tselectionValues[1]), // angle\n"
+                               "\t\t\t\tselectionValues[2],  // size\n"
+                               "\t\t\t\tselectionValues[4].x), // corner radius\n"
+                               "\t\t\tselectionValues[3]), // color\n"
+                               "\t\tdistance,\n\t\tselectionValues[4].y); // blobbyness\n",
+                               s.subtract ? "opSmoothSubtraction" : "BlobbyMin", symmetry[mirror_index]);
         }
         else
         {
@@ -662,13 +667,13 @@ void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index,
                 float sx = sin(s.angle.x);
 
                 map += std::format("\t\t\tmat3({}, {}, {},"
-                                  "{}, {}, {},"
-                                  "{}, {}, {})*\n",
-                                  cz * cy, cz * sy * sx - cx * sz, sz * sx + cz * cx * sy,
+                                   "{}, {}, {},"
+                                   "{}, {}, {})*\n",
+                                   cz * cy, cz * sy * sx - cx * sz, sz * sx + cz * cx * sy,
 
-                                  cy * sz, cz * cx + sz * sy * sx, cx * sz * sy - cz * sx,
+                                   cy * sz, cz * cx + sz * sy * sx, cx * sz * sy - cz * sx,
 
-                                  -sy, cy * sx, cy * cx);
+                                   -sy, cy * sx, cy * cx);
             }
 
             map += std::format("\t\t\t\t({}(pos) - vec3({},{},{})), // position\n", symmetry[mirror_index], s.pos.x,

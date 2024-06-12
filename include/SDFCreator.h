@@ -26,12 +26,13 @@ public:
     void save(std::filesystem::path path);
     void openSnapshot(std::filesystem::path path);
     void exportObj();
-    bool loadShader(const Camera& camera);
+    bool loadShader(const Camera& camera, bool field_mode = false);
     void unloadShader();
     void loadData() const;
     inline void rebuild() {m_needs_rebuild = true;}
     void objectAtPixel(int x, int y, const Camera& camera);
     bool isSelected() const;
+    inline void deselect() {m_selected_sphere = -1;};
     std::optional<SDFObject*> getSelected();
     static Vector3 WorldToCamera(Vector3 worldPos, Matrix cameraMatrix);
     static Vector3 VectorProjection(const Vector3 vectorToProject, const Vector3 targetVector);
@@ -52,11 +53,12 @@ private:
         int selected_params;
         int visualizer;
     } m_main_locations {};
-    enum
-    {
-        VISUALS_NONE,
-        VISUALS_SDF,
-    } visuals_mode;
+
+    // enum
+    // {
+    //     VISUALS_NONE,
+    //     VISUALS_SDF,
+    // } m_visuals_mode;
 
 
     std::vector<SDFObject> m_objects{};

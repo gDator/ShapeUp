@@ -47,6 +47,8 @@ private:
     Control m_mouse_action{};
     double m_last_axis_set = 0;
     bool mode_mode_gamepad = false;
+    bool m_show_sdf_field = false;
+    bool m_edit = true;
     union
     {
         struct
@@ -58,8 +60,10 @@ private:
         int mask;
     } m_controlled_axis = {.mask = 0x7};
 private:
+
     void drawGui();
     void handleInput();
+    void drawManipulator();
 };
 
 #endif //SDFCREATORGUI_H

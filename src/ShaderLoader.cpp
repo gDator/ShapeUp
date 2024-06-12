@@ -28,5 +28,5 @@ void ShaderLoader::loadFile(const std::filesystem::path& file_path, std::string&
         file.close();
     }
 
-    std::cout << output;
+    //std::cout << output;
 }

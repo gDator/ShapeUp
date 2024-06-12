@@ -37,6 +37,8 @@ SDFCreatorGui::SDFCreatorGui()
     m_camera.projection = CAMERA_PERSPECTIVE;
 
     m_texture = LoadRenderTexture(10, 10);
+
+    SetExitKey(KEY_NULL); // Dont exit on KEY_ESCAPE
 }
 void SDFCreatorGui::run()
 {
@@ -49,11 +51,13 @@ void SDFCreatorGui::run()
 
         // m_texture_camera with our view offset with a world origin of 0,0
         // BeginMode2D(m_texture_camera);
-        if (m_sdf_creator.loadShader(m_camera))
+
+        if (m_sdf_creator.loadShader(m_camera, m_show_sdf_field))
         {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), DARKBLUE);
             m_sdf_creator.unloadShader();
         }
+        drawManipulator();
         // EndMode2D();
         // EndTextureMode();
         // start ImGui Conent
@@ -87,32 +91,39 @@ void SDFCreatorGui::drawGui()
     }
     ImGui::End();*/
 
-    static float last_color[3] = {1,1,1};
+    static float last_color[3] = {1, 1, 1};
     if (ImGui::Begin("Edit"))
     {
+        m_edit = ImGui::IsWindowFocused();
         if (ImGui::Button("Save"))
         {
-            m_sdf_creator.save("./");
+            m_sdf_creator.save("./file.shapeup");
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Load"))
+        {
+            m_sdf_creator.openSnapshot("./file.shapeup");
         }
         ImGui::SameLine();
         if (ImGui::Button("Export"))
         {
             m_sdf_creator.exportObj();
         }
+        ImGui::Checkbox("SDF Field", &m_show_sdf_field);
         if (m_sdf_creator.isSelected())
         {
             SDFObject* old = m_sdf_creator.getSelected().value();
             ImGui::InputFloat3("Position", &old->pos.x);
             ImGui::InputFloat3("Scale", &old->size.x);
             ImGui::InputFloat3("Rotation", &old->angle.x);
-            if(ImGui::ColorPicker3("Color", last_color))
+            if (ImGui::ColorPicker3("Color", last_color))
             {
                 old->color.r = last_color[0] * 255;
                 old->color.g = last_color[1] * 255;
                 old->color.b = last_color[2] * 255;
             }
             ImGui::SliderFloat("Blob", &old->blob_amount, 0, 10);
-            ImGui::SliderFloat("Roundness", &old->corner_radius, 0, 9999);
+            ImGui::SliderFloat("Roundness", &old->corner_radius, 0, 1);
             ImGui::Checkbox("Cut out", &old->subtract);
             ImGui::Text("Mirror");
             ImGui::Checkbox("X", &old->mirror.x);
@@ -187,9 +198,9 @@ void SDFCreatorGui::handleInput()
             (IsKeyDown(KEY_RIGHT_SUPER) || IsKeyDown(KEY_LEFT_SUPER)))
         {
             // TODO: ??
-            //  spheres[num_spheres] = m_sdf_creator.getSelected();
-            //  selected_sphere = num_spheres;
-            //  num_spheres++;
+            // spheres[num_spheres] = m_sdf_creator.getSelected();
+            // selected_sphere = num_spheres;
+            // num_spheres++;
             m_sdf_creator.rebuild(); // needs_rebuild = true;
         }
 
@@ -305,12 +316,17 @@ void SDFCreatorGui::handleInput()
         if (IsKeyPressed(KEY_ESCAPE))
         {
             m_mouse_action = Control::CONTROL_NONE;
+            m_sdf_creator.deselect();
             *m_sdf_creator.getSelected().value() = before_edit;
         }
         if (IsKeyPressed(KEY_ENTER))
             m_mouse_action = Control::CONTROL_NONE;
     }
-
+    if (IsKeyPressed(KEY_ESCAPE) && m_sdf_creator.isSelected())
+    {
+        m_mouse_action = Control::CONTROL_NONE;
+        m_sdf_creator.deselect();
+    }
     static float drag_offset;
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && m_mouse_action == Control::CONTROL_NONE &&
@@ -319,10 +335,10 @@ void SDFCreatorGui::handleInput()
         if (GetRayCollisionSphere(ray, Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0.6, 0, 0}), .1)
                 .hit)
         {
-            Vector3 nearest = m_sdf_creator.NearestPointOnLine(
-                m_sdf_creator.getSelected().value()->pos,
-                Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}), ray.position,
-                Vector3Add(ray.position, ray.direction));
+            Vector3 nearest =
+                SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
+                                               ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = m_sdf_creator.getSelected().value()->pos.x - nearest.x;
             m_mouse_action = Control::CONTROL_POS_X;
@@ -331,10 +347,10 @@ void SDFCreatorGui::handleInput()
                                        .1)
                      .hit)
         {
-            Vector3 nearest = m_sdf_creator.NearestPointOnLine(
-                m_sdf_creator.getSelected().value()->pos,
-                Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}), ray.position,
-                Vector3Add(ray.position, ray.direction));
+            Vector3 nearest =
+                SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
+                                               ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = m_sdf_creator.getSelected().value()->pos.y - nearest.y;
             m_mouse_action = Control::CONTROL_POS_Y;
@@ -343,10 +359,10 @@ void SDFCreatorGui::handleInput()
                                        .1)
                      .hit)
         {
-            Vector3 nearest = m_sdf_creator.NearestPointOnLine(
-                m_sdf_creator.getSelected().value()->pos,
-                Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}), ray.position,
-                Vector3Add(ray.position, ray.direction));
+            Vector3 nearest =
+                SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
+                                               ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = m_sdf_creator.getSelected().value()->pos.z - nearest.z;
             m_mouse_action = Control::CONTROL_POS_Z;
@@ -357,10 +373,10 @@ void SDFCreatorGui::handleInput()
                                              0.2))
                      .hit)
         {
-            Vector3 nearest = m_sdf_creator.NearestPointOnLine(
-                m_sdf_creator.getSelected().value()->pos,
-                Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}), ray.position,
-                Vector3Add(ray.position, ray.direction));
+            Vector3 nearest =
+                SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
+                                               ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = nearest.x - m_sdf_creator.getSelected().value()->size.x;
             m_mouse_action = Control::CONTROL_SCALE_X;
@@ -371,10 +387,10 @@ void SDFCreatorGui::handleInput()
                                              0.2))
                      .hit)
         {
-            Vector3 nearest = m_sdf_creator.NearestPointOnLine(
-                m_sdf_creator.getSelected().value()->pos,
-                Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}), ray.position,
-                Vector3Add(ray.position, ray.direction));
+            Vector3 nearest =
+                SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
+                                               ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = nearest.y - m_sdf_creator.getSelected().value()->size.y;
             m_mouse_action = Control::CONTROL_SCALE_Y;
@@ -385,10 +401,10 @@ void SDFCreatorGui::handleInput()
                                              0.2))
                      .hit)
         {
-            Vector3 nearest = m_sdf_creator.NearestPointOnLine(
-                m_sdf_creator.getSelected().value()->pos,
-                Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}), ray.position,
-                Vector3Add(ray.position, ray.direction));
+            Vector3 nearest =
+                SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
+                                               ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = nearest.z - m_sdf_creator.getSelected().value()->size.z;
             m_mouse_action = Control::CONTROL_SCALE_Z;
@@ -404,221 +420,111 @@ void SDFCreatorGui::handleInput()
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         mouseDownPosition = GetMousePosition();
 
-    if (fabsf(GetMouseWheelMove()) > 0.01 && m_mouse_action == Control::CONTROL_NONE)
+    if (!m_edit)
     {
-        Vector2 delta = GetMouseWheelMoveV();
+        if (fabsf(GetMouseWheelMove()) > 0.01 && m_mouse_action == Control::CONTROL_NONE)
+        {
+            Vector2 delta = GetMouseWheelMoveV();
 
-        if (IsKeyDown(KEY_LEFT_ALT))
-        {
-            CameraMoveForward(&m_camera, delta.y, false);
-        }
-        else
-        {
-            Vector3 shift = Vector3Scale(m_camera.up, delta.y / 10);
-            m_camera.position = Vector3Add(m_camera.position, shift);
-            m_camera.target = Vector3Add(m_camera.target, shift);
+            if (IsKeyDown(KEY_LEFT_ALT))
+            {
+                CameraMoveForward(&m_camera, delta.y, false);
+            }
+            else
+            {
+                Vector3 shift = Vector3Scale(m_camera.up, delta.y / 10);
+                m_camera.position = Vector3Add(m_camera.position, shift);
+                m_camera.target = Vector3Add(m_camera.target, shift);
 #ifdef PLATFORM_WEB
-            delta.x = -delta.x;
+                delta.x = -delta.x;
 #endif
-            UpdateCameraPro(&m_camera, (Vector3){0, -delta.x / 10, 0}, Vector3Zero(), 0);
+                UpdateCameraPro(&m_camera, (Vector3){0, -delta.x / 10, 0}, Vector3Zero(), 0);
+            }
         }
-    }
-    else if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && m_mouse_action == Control::CONTROL_NONE &&
-             Vector2Distance(mouseDownPosition, GetMousePosition()) > 1)
-    {
-        m_mouse_action = Control::CONTROL_ROTATE_CAMERA;
-    }
-
-    if (m_mouse_action == Control::CONTROL_ROTATE_CAMERA)
-    {
-        if (!IsMouseButtonDown(MOUSE_LEFT_BUTTON))
-            m_mouse_action = Control::CONTROL_NONE;
-
-        Vector2 delta = GetMouseDelta();
-        if (IsKeyDown(KEY_LEFT_ALT))
+        else if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && m_mouse_action == Control::CONTROL_NONE &&
+                 Vector2Distance(mouseDownPosition, GetMousePosition()) > 1)
         {
-            UpdateCameraPro(&m_camera, (Vector3){0, -delta.x / 80, delta.y / 80}, Vector3Zero(), 0);
+            m_mouse_action = Control::CONTROL_ROTATE_CAMERA;
         }
-        else
+
+        if (m_mouse_action == Control::CONTROL_ROTATE_CAMERA)
         {
-            extern void CameraYaw(Camera * camera, float angle, bool rotateAroundTarget);
-            extern void CameraPitch(Camera * camera, float angle, bool lockView, bool rotateAroundTarget,
-                                    bool rotateUp);
-            CameraYaw(&m_camera, -delta.x * 0.003f, true);
-            CameraPitch(&m_camera, -delta.y * 0.003f, true, true, false);
+            if (!IsMouseButtonDown(MOUSE_LEFT_BUTTON))
+                m_mouse_action = Control::CONTROL_NONE;
+
+            Vector2 delta = GetMouseDelta();
+            if (IsKeyDown(KEY_LEFT_ALT))
+            {
+                UpdateCameraPro(&m_camera, (Vector3){0, -delta.x / 80, delta.y / 80}, Vector3Zero(), 0);
+            }
+            else
+            {
+                extern void CameraYaw(Camera * camera, float angle, bool rotateAroundTarget);
+                extern void CameraPitch(Camera * camera, float angle, bool lockView, bool rotateAroundTarget,
+                                        bool rotateUp);
+                CameraYaw(&m_camera, -delta.x * 0.003f, true);
+                CameraPitch(&m_camera, -delta.y * 0.003f, true, true, false);
+            }
         }
-    }
 
 #ifndef PLATFORM_WEB
-    float magnification = 0;
-    if (m_mouse_action == Control::CONTROL_NONE)
-    {
-        CameraMoveForward(&m_camera, 8 * magnification, false);
-    }
-    magnification = 0;
+        float magnification = 0;
+        if (m_mouse_action == Control::CONTROL_NONE)
+        {
+            CameraMoveForward(&m_camera, 8 * magnification, false);
+        }
+        magnification = 0;
 #endif
-
-    const float movement_scale = 0.1;
-    const float rotation_scale = 0.04;
-    const float rotation_radius = 4;
-
-    /*if (!IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_THUMB))
-    {
-        Vector3 offset = Vector3Scale(GetCameraForward(&m_camera), -rotation_radius);
-        offset = Vector3RotateByAxisAngle(offset, (Vector3){0, 1, 0},
-                                          -rotation_scale * GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_X));
-        offset = Vector3RotateByAxisAngle(offset, GetCameraRight(&m_camera),
-                                          -rotation_scale * GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_Y));
-        m_camera.position = Vector3Add(offset, m_camera.target);
     }
-
-    if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_TRIGGER_1))
-    {
-        Vector3 up = Vector3Normalize(Vector3CrossProduct(GetCameraForward(&m_camera), GetCameraRight(&m_camera)));
-        up = Vector3Scale(up, movement_scale * GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_Y));
-        m_camera.position = Vector3Add(m_camera.position, up);
-        m_camera.target = Vector3Add(m_camera.target, up);
-    }
-    else
-    {
-        CameraMoveForward(&camera, -GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_Y) * movement_scale, false);
-    }
-
-    CameraMoveRight(&camera, GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_X) * movement_scale, false);
-
-    Matrix camera_matrix = GetCameraMatrix(camera);
-    static Vector3 camera_space_offset;
-    if (IsGamepadButtonPressed(gamepad, GAMEPAD_BUTTON_RIGHT_TRIGGER_1))
-    {
-        selected_sphere =
-            object_at_pixel(sidebar_width + (GetScreenWidth() - sidebar_width) / 2, GetScreenHeight() / 2);
-        needs_rebuild = true;
-        if (m_sdf_creator.isSelected())
-        {
-            camera_space_offset = WorldToCamera(m_sdf_creator.getSelected().value()->pos, camera_matrix);
-        }
-    }
-
-    if (m_sdf_creator.isSelected())
-    {
-        if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_TRIGGER_1))
-        {
-            m_sdf_creator.getSelected().value()->pos = CameraToWorld(camera_space_offset, camera_matrix);
-            // m_sdf_creator.getSelected().value()->pos = Vector3Add(camera.position,
-            // Vector3Scale(GetCameraForward(&camera),distance));
-        }
-
-        if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP))
-        {
-            m_sdf_creator.getSelected().value()->size = Vector3Scale(m_sdf_creator.getSelected().value()->size, 1.05);
-            m_sdf_creator.getSelected().value()->corner_radius *= 1.05;
-        }
-        if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))
-        {
-            m_sdf_creator.getSelected().value()->size = Vector3Scale(m_sdf_creator.getSelected().value()->size, 0.95);
-            m_sdf_creator.getSelected().value()->corner_radius *= 0.95;
-        }
-
-        if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_TRIGGER_1))
-        {
-            if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_LEFT))
-            {
-                m_sdf_creator.getSelected().value()->blob_amount *= 0.95;
-            }
-            if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT))
-            {
-                m_sdf_creator.getSelected().value()->blob_amount = (0.01 +
-    m_sdf_creator.getSelected().value()->blob_amount * 1.05);
-            }
-        }
-        else
-        {
-            if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_LEFT))
-            {
-                m_sdf_creator.getSelected().value()->corner_radius *= 0.95;
-            }
-            if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT))
-            {
-                Vector3 size = m_sdf_creator.getSelected().value()->size;
-                m_sdf_creator.getSelected().value()->corner_radius = fminf(
-                    0.01 + m_sdf_creator.getSelected().value()->corner_radius * 1.05, fminf(size.x, fminf(size.y,
-    size.z)));
-            }
-        }
-
-        if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_THUMB))
-        {
-            m_sdf_creator.getSelected().value()->angle =
-                Vector3Add(m_sdf_creator.getSelected().value()->angle,
-                           (Vector3){
-                               rotation_scale * GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_Y),
-                               rotation_scale * GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_X),
-                               0,
-                           });
-        }
-    }
-
-    if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))
-    {
-        if (IsGamepadButtonPressed(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))
-        {
-            add_shape();
-        }
-
-        if (m_sdf_creator.isSelected())
-            m_sdf_creator.getSelected().value()->pos = Vector3Add(camera.position,
-    Vector3Scale(GetCameraForward(&camera), 8));
-    }*/
-
     if (m_mouse_action == Control::CONTROL_POS_X)
     {
         Vector3 nearest =
-            m_sdf_creator.NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
-                                             ray.position, Vector3Add(ray.position, ray.direction));
+            SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
+                                           ray.position, Vector3Add(ray.position, ray.direction));
 
         m_sdf_creator.getSelected().value()->pos.x = nearest.x + drag_offset;
     }
     else if (m_mouse_action == Control::CONTROL_POS_Y)
     {
         Vector3 nearest =
-            m_sdf_creator.NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
-                                             ray.position, Vector3Add(ray.position, ray.direction));
+            SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
+                                           ray.position, Vector3Add(ray.position, ray.direction));
         m_sdf_creator.getSelected().value()->pos.y = nearest.y + drag_offset;
     }
     else if (m_mouse_action == Control::CONTROL_POS_Z)
     {
         Vector3 nearest =
-            m_sdf_creator.NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
-                                             ray.position, Vector3Add(ray.position, ray.direction));
+            SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
+                                           ray.position, Vector3Add(ray.position, ray.direction));
         m_sdf_creator.getSelected().value()->pos.z = nearest.z + drag_offset;
     }
     else if (m_mouse_action == Control::CONTROL_SCALE_X)
     {
         Vector3 nearest =
-            m_sdf_creator.NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
-                                             ray.position, Vector3Add(ray.position, ray.direction));
+            SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
+                                           ray.position, Vector3Add(ray.position, ray.direction));
 
         m_sdf_creator.getSelected().value()->size.x = fmaxf(0, nearest.x - drag_offset);
     }
     else if (m_mouse_action == Control::CONTROL_SCALE_Y)
     {
         Vector3 nearest =
-            m_sdf_creator.NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
-                                             ray.position, Vector3Add(ray.position, ray.direction));
+            SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
+                                           ray.position, Vector3Add(ray.position, ray.direction));
 
         m_sdf_creator.getSelected().value()->size.y = fmaxf(0, nearest.y - drag_offset);
     }
     else if (m_mouse_action == Control::CONTROL_SCALE_Z)
     {
         Vector3 nearest =
-            m_sdf_creator.NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
-                                             ray.position, Vector3Add(ray.position, ray.direction));
+            SDFCreator::NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
+                                           ray.position, Vector3Add(ray.position, ray.direction));
 
         m_sdf_creator.getSelected().value()->size.z = fmaxf(0, nearest.z - drag_offset);
     }
@@ -628,91 +534,57 @@ void SDFCreatorGui::handleInput()
         m_mouse_action = Control::CONTROL_NONE;
     }
 
-    if (m_sdf_creator.isSelected()) //>= 0 && selected_sphere < MAX_SPHERES
-    {
-        SDFObject s = *m_sdf_creator.getSelected().value();
-
-        if (m_mouse_action == Control::CONTROL_TRANSLATE || m_mouse_action == Control::CONTROL_ROTATE ||
-            m_mouse_action == Control::CONTROL_SCALE)
-        {
-            if (m_controlled_axis.x)
-                DrawRay((Ray){Vector3Add(s.pos, (Vector3){.x = -1000}), (Vector3){.x = 1}}, RED);
-            if (m_controlled_axis.y)
-                DrawRay((Ray){Vector3Add(s.pos, (Vector3){.y = -1000}), (Vector3){.y = 1}}, GREEN);
-            if (m_controlled_axis.z)
-                DrawRay((Ray){Vector3Add(s.pos, (Vector3){.z = -1000}), (Vector3){.z = 1}}, BLUE);
-        }
-        else
-        {
-            if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_X)
-                DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0.5, 0, 0}), RED);
-            if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_X)
-                DrawCube(Vector3Add(s.pos, (Vector3){s.size.x, 0, 0}), .1, .1, .1, RED);
-            if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_X) &&
-                !mode_mode_gamepad)
-                DrawCylinderEx(Vector3Add(s.pos, (Vector3){0.5, 0, 0}), Vector3Add(s.pos, (Vector3){.7, 0, 0}), .1, 0,
-                               12, RED);
-
-            if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Y)
-                DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0, 0.5, 0}), GREEN);
-            if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_Y)
-                DrawCube(Vector3Add(s.pos, (Vector3){0, s.size.y, 0}), .1, .1, .1, GREEN);
-            if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Y) &&
-                !mode_mode_gamepad)
-                DrawCylinderEx(Vector3Add(s.pos, (Vector3){0, 0.5, 0}), Vector3Add(s.pos, (Vector3){0, .7, 0}), .1, 0,
-                               12, GREEN);
-
-            if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Z)
-                DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0, 0, 0.5}), BLUE);
-            if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_Z)
-                DrawCube(Vector3Add(s.pos, (Vector3){0, 0, s.size.z}), .1, .1, .1, BLUE);
-            if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Z) &&
-                !mode_mode_gamepad)
-                DrawCylinderEx(Vector3Add(s.pos, (Vector3){0, 0, 0.5}), Vector3Add(s.pos, (Vector3){0, 0, 0.7}), .1, 0,
-                               12, BLUE);
-        }
-    }
-    BeginMode3D(m_camera); {
-                if (m_sdf_creator.isSelected()) {
-                    SDFObject s = *m_sdf_creator.getSelected().value();
-
-                    if (m_mouse_action == Control::CONTROL_TRANSLATE || m_mouse_action == Control::CONTROL_ROTATE || m_mouse_action == Control::CONTROL_SCALE) {
-                        if (m_controlled_axis.x) DrawRay((Ray){Vector3Add(s.pos, (Vector3){.x=-1000}), (Vector3){.x=1}} , RED);
-                        if (m_controlled_axis.y) DrawRay((Ray){Vector3Add(s.pos, (Vector3){.y=-1000}), (Vector3){.y=1}} , GREEN);
-                        if (m_controlled_axis.z) DrawRay((Ray){Vector3Add(s.pos, (Vector3){.z=-1000}), (Vector3){.z=1}} , BLUE);
-                    } else {
-
-                        if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_X)
-                            DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0.5,0,0}),  RED);
-                        if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_X)
-                            DrawCube(Vector3Add(s.pos, (Vector3){s.size.x,0,0}), .1,.1,.1, RED);
-                        if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_X))
-                            DrawCylinderEx(Vector3Add(s.pos, (Vector3){0.5,0,0}),
-                                           Vector3Add(s.pos, (Vector3){.7,0,0}), .1, 0, 12, RED);
-
-                        if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Y)
-                            DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0,0.5,0}),  GREEN);
-                        if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_Y)
-                            DrawCube(Vector3Add(s.pos, (Vector3){0,s.size.y,0}), .1,.1,.1, GREEN);
-                        if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Y))
-                            DrawCylinderEx(Vector3Add(s.pos, (Vector3){0,0.5,0}),
-                                           Vector3Add(s.pos, (Vector3){0,.7,0}), .1, 0, 12, GREEN);
-
-                        if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Z)
-                            DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0,0,0.5}),  BLUE);
-                        if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_Z)
-                            DrawCube(Vector3Add(s.pos, (Vector3){0,0,s.size.z}), .1,.1,.1, BLUE);
-                        if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Z))
-                            DrawCylinderEx(Vector3Add(s.pos, (Vector3){0,0,0.5}),
-                                           Vector3Add(s.pos, (Vector3){0,0,0.7}), .1, 0, 12, BLUE);
-
-                    }
-                }
-            } EndMode3D();
-
     /*if (mode_mode_gamepad)
     {
         DrawCircle(sidebar_width + (GetScreenWidth() - sidebar_width) / 2, GetScreenHeight() / 2, 5, {255, 255, 255,
     255});
     }*/
+}
+void SDFCreatorGui::drawManipulator()
+{
+    BeginMode3D(m_camera);
+    {
+        if (m_sdf_creator.isSelected())
+        {
+            SDFObject s = *m_sdf_creator.getSelected().value();
+
+            if (m_mouse_action == Control::CONTROL_TRANSLATE || m_mouse_action == Control::CONTROL_ROTATE ||
+                m_mouse_action == Control::CONTROL_SCALE)
+            {
+                if (m_controlled_axis.x)
+                    DrawRay((Ray){Vector3Add(s.pos, (Vector3){.x = -1000}), (Vector3){.x = 1}}, RED);
+                if (m_controlled_axis.y)
+                    DrawRay((Ray){Vector3Add(s.pos, (Vector3){.y = -1000}), (Vector3){.y = 1}}, GREEN);
+                if (m_controlled_axis.z)
+                    DrawRay((Ray){Vector3Add(s.pos, (Vector3){.z = -1000}), (Vector3){.z = 1}}, BLUE);
+            }
+            else
+            {
+                if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_X)
+                    DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0.5, 0, 0}), RED);
+                if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_X)
+                    DrawCube(Vector3Add(s.pos, (Vector3){s.size.x, 0, 0}), .1, .1, .1, RED);
+                if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_X))
+                    DrawCylinderEx(Vector3Add(s.pos, (Vector3){0.5, 0, 0}), Vector3Add(s.pos, (Vector3){.7, 0, 0}), .1,
+                                   0, 12, RED);
+
+                if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Y)
+                    DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0, 0.5, 0}), GREEN);
+                if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_Y)
+                    DrawCube(Vector3Add(s.pos, (Vector3){0, s.size.y, 0}), .1, .1, .1, GREEN);
+                if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Y))
+                    DrawCylinderEx(Vector3Add(s.pos, (Vector3){0, 0.5, 0}), Vector3Add(s.pos, (Vector3){0, .7, 0}), .1,
+                                   0, 12, GREEN);
+
+                if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Z)
+                    DrawLine3D(s.pos, Vector3Add(s.pos, (Vector3){0, 0, 0.5}), BLUE);
+                if (m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_SCALE_Z)
+                    DrawCube(Vector3Add(s.pos, (Vector3){0, 0, s.size.z}), .1, .1, .1, BLUE);
+                if ((m_mouse_action == Control::CONTROL_NONE || m_mouse_action == Control::CONTROL_POS_Z))
+                    DrawCylinderEx(Vector3Add(s.pos, (Vector3){0, 0, 0.5}), Vector3Add(s.pos, (Vector3){0, 0, 0.7}), .1,
+                                   0, 12, BLUE);
+            }
+        }
+    }
+    EndMode3D();
 }
