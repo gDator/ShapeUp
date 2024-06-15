@@ -1,0 +1,2 @@
+add_library(stlplus_containers INTERFACE)
+target_include_directories(stlplus_containers INTERFACE .)
