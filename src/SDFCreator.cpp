@@ -13,23 +13,37 @@ SDFCreator::SDFCreator()
 {
     m_last_save = GetTime();
     m_shader_files.loadShader();
-    m_selected_sphere = -1;
+    m_selected_sphere.set_null();
+    const SDFObject root;
+    m_sdf_tree.insert(root);
 }
 void SDFCreator::rebuildShaders()
 {
     m_needs_rebuild = false;
     UnloadShader(m_main_shader);
+    for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
+    {
+        i->reset();
+    }
+    std::string map_function;
+    if (m_selected_sphere.valid())
+    {
+        appendMapFunction(map_function, false, &(*m_selected_sphere));
+    }
+    else
+    {
+        appendMapFunction(map_function, false, nullptr);
+    }
 
-    std::string map_function = "";
-    appendMapFunction(map_function, false, m_selected_sphere);
-
-    std::string result = "";
+    std::string result;
     result += SHADER_VERSION_PREFIX "out vec4 finalColor;\n"
                                     "uniform vec3 viewEye; \n"
                                     "uniform vec3 viewCenter; \n"
                                     "uniform float runTime; \n"
                                     "uniform float visualizer; \n"
-                                    "uniform vec2 resolution;\n";
+                                    "uniform vec2 resolution;\n"
+                                    "uniform float blend;\n";
+
     result += m_shader_files.getShaderPrefixFS();
     result += map_function;
     result += m_shader_files.getShaderBaseFS();
@@ -41,46 +55,83 @@ void SDFCreator::rebuildShaders()
     m_main_locations.resolution = GetShaderLocation(m_main_shader, "resolution");
     m_main_locations.selected_params = GetShaderLocation(m_main_shader, "selectionValues");
     m_main_locations.visualizer = GetShaderLocation(m_main_shader, "visualizer");
+    m_main_locations.blend = GetShaderLocation(m_main_shader, "blend");
+    SaveFileText("./shader.glsl", result.data());
 }
 
-void SDFCreator::deleteSphere()
+void SDFCreator::deleteObject()
 {
     // memmove(&spheres[index], &spheres[index + 1], sizeof(Sphere) * (m_num_spheres - index));
-    m_objects.erase(m_objects.begin() + m_selected_sphere);
-    m_num_spheres--;
-
-    // if (m_selected_sphere == index)
-    // {
-    //     m_selected_sphere = m_num_spheres - 1;
-    // }
-    // else if (m_selected_sphere > index)
-    // {
-    //     m_selected_sphere--;
-    // }
-
-    m_needs_rebuild = true;
+    if (m_selected_sphere.valid())
+    {
+        const auto subtree = m_sdf_tree.subtree(m_selected_sphere, 0);
+        const auto parent = m_sdf_tree.parent(m_selected_sphere);
+        // add subtree
+        if (parent.valid())
+        {
+            m_sdf_tree.insert(parent, subtree);
+        }
+        else
+        {
+            // add at root node
+            m_sdf_tree.insert(subtree);
+        }
+        m_sdf_tree.erase(m_selected_sphere);
+        m_selected_sphere.set_null();
+        m_needs_rebuild = true;
+        m_num_spheres--;
+    }
 }
 
-void SDFCreator::addShape(Color color)
+void SDFCreator::addShape(SDFObjectType type, Color color)
 {
-    /*spheres[m_num_spheres] = (Sphere){
-        .size = {1, 1, 1},
-        .color =
-            {
-            last_color_set.r,
-            last_color_set.g,
-            last_color_set.b,
-        }};*/
-    SDFObject obj{};
+    SDFObject obj(type);
     obj.size = {1, 1, 1};
     obj.color = {color.r, color.g, color.b};
-    m_objects.push_back(obj);
-    m_selected_sphere = m_num_spheres;
+    if (m_selected_sphere.valid())
+    {
+        // No shapes on
+        if (m_selected_sphere->getType() == SDFType::OPERATION && m_sdf_tree.children(m_selected_sphere) < 2)
+        {
+            m_sdf_tree.append(m_selected_sphere, obj);
+        }
+        else
+        {
+            m_sdf_tree.append(m_sdf_tree.root(), obj);
+        }
+    }
+    else
+    {
+        m_sdf_tree.append(m_sdf_tree.root(), obj);
+    }
+
     m_num_spheres++;
-    m_needs_rebuild = true;
+    rebuild();
+}
+void SDFCreator::addOperation(const SDFOperationType type)
+{
+    const SDFObject obj(type);
+    // operation can only have two children
+    if (m_selected_sphere.valid())
+    {
+        if (m_selected_sphere->getType() == SDFType::OPERATION && m_sdf_tree.children(m_selected_sphere) < 2)
+        {
+            m_sdf_tree.append(m_selected_sphere, obj);
+            m_num_spheres++;
+            m_needs_rebuild = true;
+        }
+        else
+        {
+            m_sdf_tree.append(m_sdf_tree.root(), obj);
+        }
+    }
+    else
+    {
+        m_sdf_tree.append(m_sdf_tree.root(), obj);
+    }
 }
 
-void SDFCreator::save(std::filesystem::path path)
+/*void SDFCreator::save(std::filesystem::path path)
 {
     // save data and amount of objects into file
     const int size = sizeof(int) + sizeof(SDFObject) * m_num_spheres;
@@ -109,9 +160,9 @@ void SDFCreator::openSnapshot(std::filesystem::path path)
     m_selected_sphere = -1;
     m_needs_rebuild = true;
     m_last_save = GetTime();
-}
+}*/
 
-bool SDFCreator::loadShader(const Camera& camera, bool field_mode)
+bool SDFCreator::loadShader(const Camera& camera, bool field_mode, float blend)
 {
     if (m_needs_rebuild)
     {
@@ -129,6 +180,7 @@ bool SDFCreator::loadShader(const Camera& camera, bool field_mode)
     SetShaderValue(m_main_shader, m_main_locations.run_time, &m_run_time, SHADER_UNIFORM_FLOAT);
     float mode = static_cast<float>(field_mode);
     SetShaderValue(m_main_shader, m_main_locations.visualizer, &mode, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(m_main_shader, m_main_locations.blend, &blend, SHADER_UNIFORM_FLOAT);
     loadData();
     if (IsShaderReady(m_main_shader))
     {
@@ -140,11 +192,11 @@ bool SDFCreator::loadShader(const Camera& camera, bool field_mode)
 
 void SDFCreator::loadData() const
 {
-    if (m_selected_sphere >= 0 && m_selected_sphere < m_objects.size())
+    if (m_selected_sphere.valid())
     {
-        const SDFObject* s = &m_objects.at(m_selected_sphere);
+        const SDFObject* s = &(*m_selected_sphere);
         float used_radius = fmaxf(0.01, fminf(s->corner_radius, fminf(s->size.x, fminf(s->size.y, s->size.z))));
-        float data[15] = {
+        float data[20] = {
             s->pos.x,
             s->pos.y,
             s->pos.z,
@@ -161,12 +213,16 @@ void SDFCreator::loadData() const
             s->color.g / 255.f,
             s->color.b / 255.f,
 
-            used_radius,
-            fmaxf(s->blob_amount, 0.0001),
+            s->flex_vector.x,
+            s->flex_vector.y,
+            s->flex_vector.z,
+
+            s->flex_parameter,
+            0,
             0,
         };
 
-        SetShaderValueV(m_main_shader, m_main_locations.selected_params, data, SHADER_UNIFORM_VEC3, 5);
+        SetShaderValueV(m_main_shader, m_main_locations.selected_params, data, SHADER_UNIFORM_VEC3, 6);
     }
 }
 
@@ -178,7 +234,7 @@ void SDFCreator::unloadShader()
     }
 }
 
-void SDFCreator::exportObj()
+/*void SDFCreator::exportObj()
 {
     std::string shader_source{};
     shader_source += SHADER_VERSION_PREFIX;
@@ -303,7 +359,7 @@ void SDFCreator::exportObj()
                                 (val4 < SDF_THRESHOLD) << 4 | (val5 < SDF_THRESHOLD) << 5 |
                                 (val6 < SDF_THRESHOLD) << 6 | (val7 < SDF_THRESHOLD) << 7;
 
-                /* Cube is entirely in/out of the surface */
+                /* Cube is entirely in/out of the surface #1#
                 if (edgeTable[cubeindex] == 0)
                     continue;
 
@@ -359,7 +415,7 @@ void SDFCreator::exportObj()
 
     double duration = GetTime() - startTime;
     std::cout << std::format("export time {}ms. size: {}MB", duration * 1000, data_size / 1000000.f);
-}
+}*/
 
 void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
 {
@@ -367,7 +423,7 @@ void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
     std::string shader_source = "";
     shader_source += SHADER_VERSION_PREFIX;
     shader_source += m_shader_files.getShaderPrefixFS();
-    appendMapFunction(shader_source, true, -1);
+    appendMapFunction(shader_source, true, nullptr);
     shader_source += m_shader_files.getSelectionFS();
 
     Shader shader = LoadShaderFromMemory(vshader, shader_source.c_str());
@@ -409,197 +465,65 @@ void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
         rlReadTexturePixels(target.texture.id, target.texture.width, target.texture.height, target.texture.format));
 
     int object_index = ((int)pixels[(x + target.texture.width * (target.texture.height - y)) * 4]) - 1;
-
+    auto image = LoadImageFromTexture(target.texture);
+    ExportImage(image, "selection.png");
     std::free(pixels);
 
     UnloadRenderTexture(target);
     UnloadShader(shader);
 
     std::cout << "picking object took " << (int)((-start + GetTime()) * 1000) << "ms\n";
-    int old_selected = m_selected_sphere;
-    if (object_index >= 0 && object_index < m_objects.size())
+    std::cout << "image size" << image.height << ", " << image.width;
+    auto old_selected = m_selected_sphere;
+    for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); i++)
     {
-        m_selected_sphere = object_index;
-        if (m_selected_sphere != old_selected)
+        if (i->getIndex() == object_index)
         {
-            rebuild();
+            m_selected_sphere = i.simplify();
         }
+    }
+
+    if (m_selected_sphere != old_selected)
+    {
+        rebuild();
     }
 
     std::cout << object_index << std::endl;
 }
 bool SDFCreator::isSelected() const
 {
-    if (m_selected_sphere >= 0 && m_selected_sphere < m_objects.size())
+    return m_selected_sphere.valid();
+}
+
+void SDFCreator::select(const SDFIterator& i)
+{
+    auto old = m_selected_sphere;
+    m_selected_sphere = i;
+    if (old != m_selected_sphere)
     {
-        return true;
-    }
-    else
-    {
-        return false;
+        rebuild();
     }
 }
-std::optional<SDFObject*> SDFCreator::getSelected()
+
+std::optional<SDFIterator> SDFCreator::getSelected()
 {
-    if (m_selected_sphere >= 0 && m_selected_sphere < m_objects.size())
+    if (m_selected_sphere.valid())
     {
-        return &m_objects.at(m_selected_sphere);
+        return m_selected_sphere;
     }
     return std::nullopt;
 }
-
-Vector3 VertexInterp(Vector4 p1, Vector4 p2, float threshold)
+void SDFCreator::clear()
 {
-    if (fabsf(threshold - p1.w) < 0.00001)
-        return *(Vector3*)&p1;
-    if (fabsf(threshold - p2.w) < 0.00001)
-        return *(Vector3*)&p2;
-    if (fabsf(p1.w - p2.w) < 0.00001)
-        return *(Vector3*)&p1;
-
-    float mu = (threshold - p1.w) / (p2.w - p1.w);
-    Vector3 r = {
-        p1.x + mu * (p2.x - p1.x),
-        p1.y + mu * (p2.y - p1.y),
-        p1.z + mu * (p2.z - p1.z),
-    };
-
-    return r;
+    const SDFObject root(SDFOperationType::NONE);
+    m_sdf_tree.insert(root);
 }
 
-int SDFCreator::RayPlaneIntersection(const Vector3 RayOrigin, const Vector3 RayDirection, const Vector3 PlanePoint,
-                                     const Vector3 PlaneNormal, Vector3* IntersectionPoint)
-{
-    float dotProduct =
-        (PlaneNormal.x * RayDirection.x) + (PlaneNormal.y * RayDirection.y) + (PlaneNormal.z * RayDirection.z);
-
-    // Check if the ray is parallel to the plane
-    if (dotProduct == 0.0f)
-    {
-        return 0;
-    }
-
-    float t = ((PlanePoint.x - RayOrigin.x) * PlaneNormal.x + (PlanePoint.y - RayOrigin.y) * PlaneNormal.y +
-               (PlanePoint.z - RayOrigin.z) * PlaneNormal.z) /
-              dotProduct;
-
-    IntersectionPoint->x = RayOrigin.x + t * RayDirection.x;
-    IntersectionPoint->y = RayOrigin.y + t * RayDirection.y;
-    IntersectionPoint->z = RayOrigin.z + t * RayDirection.z;
-
-    return 1;
-}
-
-Vector3 SDFCreator::WorldToCamera(Vector3 worldPos, Matrix cameraMatrix)
-{
-    return Vector3Transform(worldPos, cameraMatrix);
-}
-
-Vector3 SDFCreator::CameraToWorld(Vector3 worldPos, Matrix cameraMatrix)
-{
-    return Vector3Transform(worldPos, MatrixInvert(cameraMatrix));
-}
-
-Vector3 SDFCreator::VectorProjection(const Vector3 vectorToProject, const Vector3 targetVector)
-{
-    float dotProduct = (vectorToProject.x * targetVector.x) + (vectorToProject.y * targetVector.y) +
-                       (vectorToProject.z * targetVector.z);
-
-    float targetVectorLengthSquared =
-        (targetVector.x * targetVector.x) + (targetVector.y * targetVector.y) + (targetVector.z * targetVector.z);
-
-    float scale = dotProduct / targetVectorLengthSquared;
-
-    Vector3 projection;
-    projection.x = targetVector.x * scale;
-    projection.y = targetVector.y * scale;
-    projection.z = targetVector.z * scale;
-
-    return projection;
-}
-
-// Find the point on line p1 to p2 nearest to line p2 to p4
-Vector3 SDFCreator::NearestPointOnLine(Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4)
-{
-    float mua;
-
-    Vector3 p13, p43, p21;
-    float d1343, d4321, d1321, d4343, d2121;
-    float numer, denom;
-
-    const float EPS = 0.001;
-
-    p13.x = p1.x - p3.x;
-    p13.y = p1.y - p3.y;
-    p13.z = p1.z - p3.z;
-    p43.x = p4.x - p3.x;
-    p43.y = p4.y - p3.y;
-    p43.z = p4.z - p3.z;
-    if (fabs(p43.x) < EPS && fabs(p43.y) < EPS && fabs(p43.z) < EPS)
-        return (Vector3){};
-    p21.x = p2.x - p1.x;
-    p21.y = p2.y - p1.y;
-    p21.z = p2.z - p1.z;
-    if (fabs(p21.x) < EPS && fabs(p21.y) < EPS && fabs(p21.z) < EPS)
-        return (Vector3){};
-
-    d1343 = p13.x * p43.x + p13.y * p43.y + p13.z * p43.z;
-    d4321 = p43.x * p21.x + p43.y * p21.y + p43.z * p21.z;
-    d1321 = p13.x * p21.x + p13.y * p21.y + p13.z * p21.z;
-    d4343 = p43.x * p43.x + p43.y * p43.y + p43.z * p43.z;
-    d2121 = p21.x * p21.x + p21.y * p21.y + p21.z * p21.z;
-
-    denom = d2121 * d4343 - d4321 * d4321;
-    if (fabs(denom) < EPS)
-        return (Vector3){};
-    numer = d1343 * d4321 - d1321 * d4343;
-
-    mua = numer / denom;
-
-    return (Vector3){p1.x + mua * p21.x, p1.y + mua * p21.y, p1.z + mua * p21.z};
-}
-
-BoundingBox SDFCreator::boundingBoxSized(Vector3 center, float size)
-{
-    return (BoundingBox){
-        Vector3SubtractValue(center, size / 2),
-        Vector3AddValue(center, size / 2),
-    };
-}
-
-BoundingBox SDFCreator::shapeBoundingBox(SDFObject s)
-{
-    // const float radius = sqrtf(powf(s.size.x, 2) + powf(s.size.y, 2) + powf(s.size.z, 2));
-    return (BoundingBox){
-        Vector3Subtract(s.pos, s.size),
-        Vector3Add(s.pos, s.size),
-    };
-}
-
-Vector3 SDFCreator::VertexInterp(Vector4 p1, Vector4 p2, float threshold)
-{
-    if (fabsf(threshold - p1.w) < 0.00001)
-        return *(Vector3*)&p1;
-    if (fabsf(threshold - p2.w) < 0.00001)
-        return *(Vector3*)&p2;
-    if (fabsf(p1.w - p2.w) < 0.00001)
-        return *(Vector3*)&p1;
-
-    float mu = (threshold - p1.w) / (p2.w - p1.w);
-    Vector3 r = {
-        p1.x + mu * (p2.x - p1.x),
-        p1.y + mu * (p2.y - p1.y),
-        p1.z + mu * (p2.z - p1.z),
-    };
-
-    return r;
-}
-
-void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index, int dynamic_index) const
+void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index, SDFObject* dynamic_index)
 {
     std::string map = "";
 
-    map += "uniform vec3 selectionValues[5];\n\n";
+    map += "uniform vec3 selectionValues[6];\n\n";
 
 #if DEMO_VIDEO_FEATURES
     if (false_color_mode)
@@ -610,93 +534,14 @@ void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index,
 
     map += "vec4 signed_distance_field( in vec3 pos ){\n"
            "\tvec4 distance = vec4(999999.,0,0,0);\n";
-    const std::string symmetry[8] = {"", "opSymX", "opSymY", "opSymXY", "opSymZ", "opSymXZ", "opSymYZ", "opSymXYZ"};
-    for (int i = 0; i < m_objects.size(); i++)
+    int index_counter = 0;
+    std::stringstream shader_content;
+    for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
     {
-        SDFObject s = m_objects[i];
-        float used_radius = fmaxf(0.01, fminf(s.corner_radius, fminf(s.size.x, fminf(s.size.y, s.size.z))));
-
-        int mirror_index = (s.mirror.z << 2) | (s.mirror.y << 1) | s.mirror.x;
-        if (i == dynamic_index)
-        {
-            map += std::format("\tdistance = {}(\n"
-                               "\t\tvec4(RoundBox(\n"
-                               "\t\t\t\topRotateXYZ(\n"
-                               "\t\t\t\t\t{}(pos) - selectionValues[0], // position\n"
-                               "\t\t\t\t\tselectionValues[1]), // angle\n"
-                               "\t\t\t\tselectionValues[2],  // size\n"
-                               "\t\t\t\tselectionValues[4].x), // corner radius\n"
-                               "\t\t\tselectionValues[3]), // color\n"
-                               "\t\tdistance,\n\t\tselectionValues[4].y); // blobbyness\n",
-                               s.subtract ? "opSmoothSubtraction" : "BlobbyMin", symmetry[mirror_index]);
-        }
-        else
-        {
-            uint8_t r = use_color_as_index ? (uint8_t)(i + 1) : s.color.r;
-            uint8_t g = use_color_as_index ? 0 : s.color.g;
-            uint8_t b = use_color_as_index ? 0 : s.color.b;
-
-#if DEMO_VIDEO_FEATURES
-            if (false_color_mode)
-            {
-                Color c = ColorFromHSV((i * 97) % 360, 1, 0.5);
-                r = c.r;
-                g = c.g;
-                b = c.b;
-            }
-#endif
-
-            const std::string opName = s.subtract ? "opSmoothSubtraction"
-                                                  : ((use_color_as_index
-#if DEMO_VIDEO_FEATURES
-                                                      || false_color_mode
-#endif
-                                                      )
-                                                         ? "opSmoothUnionSteppedColor"
-                                                         : (s.blob_amount > 0 ? "BlobbyMin" : "Min"));
-            map += std::format("\tdistance = {}(\n\t\tvec4(RoundBox(\n", opName);
-
-            const bool rotated = fabsf(s.angle.x) > .01 || fabsf(s.angle.y) > 0.01 || fabsf(s.angle.z) > .01;
-            if (rotated)
-            {
-                float cz = cos(s.angle.z);
-                float sz = sin(s.angle.z);
-                float cy = cos(s.angle.y);
-                float sy = sin(s.angle.y);
-                float cx = cos(s.angle.x);
-                float sx = sin(s.angle.x);
-
-                map += std::format("\t\t\tmat3({}, {}, {},"
-                                   "{}, {}, {},"
-                                   "{}, {}, {})*\n",
-                                   cz * cy, cz * sy * sx - cx * sz, sz * sx + cz * cx * sy,
-
-                                   cy * sz, cz * cx + sz * sy * sx, cx * sz * sy - cz * sx,
-
-                                   -sy, cy * sx, cy * cx);
-            }
-
-            map += std::format("\t\t\t\t({}(pos) - vec3({},{},{})), // position\n", symmetry[mirror_index], s.pos.x,
-                               s.pos.y, s.pos.z);
-
-            map += std::format("\t\t\tvec3({},{},{}),// size\n"
-                               "\t\t\t{}), // corner radius\n"
-                               "\t\t\t{},{},{}), // color\n"
-                               "\t\tdistance",
-                               s.size.x - used_radius, s.size.y - used_radius, s.size.z - used_radius, used_radius,
-                               r / 255.f, g / 255.f, b / 255.f);
-
-            if (opName == "Min")
-            {
-                map += ");\n";
-            }
-            else
-            {
-                map += std::format(",\n\t\t{});  // blobbyness\n", fmaxf(s.blob_amount, 0.0001));
-            }
-        }
+        SDFObject s = *i;
+        generateShaderContent(shader_content, i.simplify(), index_counter, use_color_as_index, dynamic_index);
     }
-
+    map += shader_content.str();
     map += "\treturn distance;\n}\n";
 
 #if DEMO_VIDEO_FEATURES
@@ -704,4 +549,284 @@ void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index,
 #endif
 
     result += map;
+}
+
+void SDFCreator::generateShaderObject(std::stringstream& content, SDFIterator current, int& count,
+                                      bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent)
+{
+    if (current->getObjectType() == SDFObjectType::NONE)
+    {
+        return;
+    }
+
+    // save index for selecting
+    // const std::string symmetry[8] = {"", "opSymX", "opSymY", "opSymXY", "opSymZ", "opSymXZ", "opSymYZ", "opSymXYZ"};
+    // float used_radius = fmaxf(0.01, fminf(corner_radius, fminf(size.x, fminf(size.y, size.z))));
+    // int mirror_index = (mirror.z << 2) | (mirror.y << 1) | mirror.x;
+    if (!with_parent)
+    {
+        content << "distance = ";
+    }
+
+    uint8_t r = use_color_as_index ? (uint8_t)(count + 1) : current->color.r;
+    uint8_t g = use_color_as_index ? (uint8_t)(count>>8 ) : current->color.g;
+    uint8_t b = use_color_as_index ? (uint8_t)(count>>16) : current->color.b;
+
+    content << "\tMin(\n\t\tvec4(\n";
+    switch (current->getObjectType())
+    {
+        case SDFObjectType::NONE:
+            break;
+        case SDFObjectType::ROUND_BOX:
+            content << "sdRoundBox(";
+            break;
+        case SDFObjectType::SPHERE:
+            content << "sdSphere(";
+            break;
+        case SDFObjectType::BOX_FRAME:
+            content << "sdBoxFrame(";
+            break;
+        case SDFObjectType::TORUS:
+            content << "sdTorus(";
+            break;
+        case SDFObjectType::BOX:
+            content << "sdBox(";
+            break;
+        case SDFObjectType::CAPPED_TORUS:
+            content << "sdCappedTorus(";
+            break;
+        case SDFObjectType::LINK:
+            content << "sdLink(";
+            break;
+        case SDFObjectType::CYLINDER:
+            content << "sdCylinder(";
+            break;
+        case SDFObjectType::CONE:
+            content << "sdCone(";
+            break;
+        case SDFObjectType::PLANE:
+            content << "sdPlane(";
+            break;
+        case SDFObjectType::HEX_PRISM:
+            content << "sdHexPrism(";
+            break;
+        case SDFObjectType::TRI_PRISM:
+            content << "sdTriPrism(";
+            break;
+        case SDFObjectType::CAPSULE:
+            content << "sdCapsule(";
+            break;
+        case SDFObjectType::VERTICAL_CAPSULE:
+            content << "sdVerticalCapsule(";
+            break;
+        case SDFObjectType::CAPPED_CYLINDER:
+            content << "sdCappedCylinder(";
+            break;
+        case SDFObjectType::ROUNDED_CYLINDER:
+            content << "sdRoundedCylinder(";
+            break;
+        case SDFObjectType::CAPPED_CONE:
+            content << "sdCappedCone(";
+            break;
+        case SDFObjectType::SOLDID_ANGLE:
+            content << "sdSolidAngle(";
+            break;
+        case SDFObjectType::CUT_SPHERE:
+            content << "sdCutSphere(";
+            break;
+        case SDFObjectType::CUT_HOLLOW_SPHERE:
+            content << "sdCutHollowSphere(";
+            break;
+        case SDFObjectType::DEATH_STAR:
+            content << "sdDeathStar(";
+            break;
+        case SDFObjectType::ROUND_CONE:
+            content << "sdRoundCone(";
+            break;
+        case SDFObjectType::ELLIPSOID:
+            content << "sdEllipsoid(";
+            break;
+        case SDFObjectType::VESICA_SEGMENT:
+            content << "sdVesicaSegment(";
+            break;
+        case SDFObjectType::RHOMBUS:
+            content << "sdRhombus(";
+            break;
+        case SDFObjectType::OCTAHEDRON:
+            content << "sdOctahedron(";
+            break;
+        case SDFObjectType::PYRAMID:
+            content << "sdPyramid(";
+            break;
+    }
+    if (&(*current) == dynamic_index)
+    {
+        content << std::string("\t\topRotateXYZ((pos) - selectionValues[0], // position\n"
+                               "\t\tselectionValues[1]), // angle\n"
+                               "\t\tselectionValues[4], //extra vector\n"
+                               "\t\tselectionValues[2],  // size\n"
+                               "\t\tselectionValues[5].x), // extra  parameter\n"
+                               "\t\tselectionValues[3]), // color\n"
+                               "\t\tdistance\n");
+    }
+    else
+    {
+        // Rotation Matrix
+        //  const bool rotated = fabsf(current->angle.x) > .01 || fabsf(current->angle.y) > 0.01 ||
+        //  fabsf(current->angle.z) > .01; if (rotated)
+        //  {
+        float cz = cos(current->angle.z);
+        float sz = sin(current->angle.z);
+        float cy = cos(current->angle.y);
+        float sy = sin(current->angle.y);
+        float cx = cos(current->angle.x);
+        float sx = sin(current->angle.x);
+
+        content << std::format("\t\t\tmat3({}, {}, {},"
+                               "{}, {}, {},"
+                               "{}, {}, {})*\n",
+                               cz * cy, cz * sy * sx - cx * sz, sz * sx + cz * cx * sy,
+
+                               cy * sz, cz * cx + sz * sy * sx, cx * sz * sy - cz * sx,
+
+                               -sy, cy * sx, cy * cx);
+        // }
+
+        // position vector is the same everywhere
+        content << std::format("\t\t\t\t((pos) - vec3({},{},{})), // position\n", current->pos.x, current->pos.y,
+                               current->pos.z);
+
+        content << std::format("\t\t\tvec3({},{},{}),// mostly unused\n"
+                               "\t\t\tvec3({},{},{}),// size\n"
+                               "\t\t\t{}), // felxible parameter\n"
+                               "\t\t\t{},{},{}), // color\n"
+                               "\t\tdistance",
+                               current->flex_vector.x, current->flex_vector.y, current->flex_vector.z, current->size.x,
+                               current->size.y, current->size.z, current->flex_parameter, r / 255.f, g / 255.f,
+                               b / 255.f);
+    }
+    if (!with_parent)
+    {
+        content << ");\n";
+    }
+    else
+    {
+        content << ")";
+    }
+}
+void SDFCreator::generateShaderOperation(std::stringstream& content, SDFIterator current, int count,
+                                         bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent)
+{
+    if (current->getOperationType() == SDFOperationType::NONE)
+    {
+        return;
+    }
+    if (m_sdf_tree.children(current) == 2)
+    {
+        if (with_parent)
+        {
+            content << "Min(";
+        }
+        else
+        {
+            content << "distance = Min(";
+        }
+        switch (current->getOperationType())
+        {
+            default:
+                TraceLog(LOG_ERROR, "Cant perform operation with this count of childs %i",
+                         m_sdf_tree.children(current));
+                break;
+            case SDFOperationType::NONE:
+                break;
+            case SDFOperationType::SMOOTH_UNION:
+                content << "opSmoothUnion(";
+                break;
+            case SDFOperationType::SMOOTH_SUBSTRACTION:
+                content << "opSmoothSubtraction(";
+                break;
+            case SDFOperationType::SMOOTH_INTERSECTION:
+                content << "opSmoothSubtraction(";
+                break;
+            case SDFOperationType::UNION:
+                content << "opUnion(";
+                break;
+            case SDFOperationType::SUBSTRACTION:
+                content << "opSubtraction(";
+                break;
+            case SDFOperationType::INTERSECTION:
+                content << "opIntersection(";
+                break;
+        }
+        generateShaderContent(content, m_sdf_tree.child(current, 0), count, use_color_as_index, dynamic_index, true);
+        content << ", //end first operand \n";
+        generateShaderContent(content, m_sdf_tree.child(current, 1), count, use_color_as_index, dynamic_index, true);
+        if (with_parent)
+        {
+            content << "), distance) //compare to old distance\n";
+        }
+        else
+        {
+            content << "), distance); //compare to old distance\n";
+        }
+    }
+    if (m_sdf_tree.children(current) == 1)
+    {
+        if(current->getOperationType() != SDFOperationType::ROUND || current->getOperationType() !=SDFOperationType::ONION)
+        {
+            return;
+        }
+
+        if (with_parent)
+        {
+            content << "Min(";
+        }
+        else
+        {
+            content << "distance = Min(";
+        }
+        switch (current->getOperationType())
+        {
+            default:
+                TraceLog(LOG_ERROR, "Cant perform operation with this count of childs %i",
+                         m_sdf_tree.children(current));
+                return;
+            case SDFOperationType::ROUND:
+                content << "opRound(";
+                break;
+            case SDFOperationType::ONION:
+                content << "opOnion(";
+                break;
+        }
+        generateShaderContent(content, m_sdf_tree.child(current, 0), count, use_color_as_index, dynamic_index, true);
+        content << ", //end first  operand\n";
+        content << std::to_string(current->flex_parameter);
+        if (with_parent)
+        {
+            content << "), distance) //compare to old distance\n";
+        }
+        else
+        {
+            content << "), distance); //compare to old distance\n";
+        }
+    }
+}
+
+void SDFCreator::generateShaderContent(std::stringstream& content, SDFIterator current, int& count,
+                                       bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent)
+{
+    current->m_index = count;
+    count++;
+    if (current->isDone())
+        return;
+    current->done();
+    switch (current->getType())
+    {
+        case SDFType::OBJECT:
+            generateShaderObject(content, current, count, use_color_as_index, dynamic_index, with_parent);
+            break;
+        case SDFType::OPERATION:
+            generateShaderOperation(content, current, count, use_color_as_index, dynamic_index, with_parent);
+            break;
+    }
 }

@@ -4,10 +4,9 @@
 
 #ifndef SDFCREATOR_H
 #define SDFCREATOR_H
+#include "SDFTypes.h"
 #include "SDFObject.h"
 #include "ShaderLoader.h"
-
-#include <__filesystem/filesystem_error.h>
 #include "raylib.h"
 
 #ifdef PLATFORM_WEB
@@ -15,34 +14,33 @@
 #else
 #define SHADER_VERSION_PREFIX "#version 330\n"
 #endif
+#include "ntree.hpp"
+
+typedef stlplus::ntree_iterator<SDFObject, SDFObject&, SDFObject*> SDFIterator;
 
 class SDFCreator
 {
 public:
     SDFCreator();
     void rebuildShaders();
-    void addShape(Color color);
-    void deleteSphere();
-    void save(std::filesystem::path path);
-    void openSnapshot(std::filesystem::path path);
-    void exportObj();
-    bool loadShader(const Camera& camera, bool field_mode = false);
+    void addShape(SDFObjectType type, Color color);
+    void addOperation(const SDFOperationType type);
+    void deleteObject();
+    //TODO: export, save, open
+    // void save(std::filesystem::path path);
+    // void openSnapshot(std::filesystem::path path);
+    // void exportObj();
+    bool loadShader(const Camera& camera, bool field_mode = false, float blend = 0.5);
     void unloadShader();
     void loadData() const;
     inline void rebuild() {m_needs_rebuild = true;}
     void objectAtPixel(int x, int y, const Camera& camera);
     bool isSelected() const;
-    inline void deselect() {m_selected_sphere = -1;};
-    std::optional<SDFObject*> getSelected();
-    static Vector3 WorldToCamera(Vector3 worldPos, Matrix cameraMatrix);
-    static Vector3 VectorProjection(const Vector3 vectorToProject, const Vector3 targetVector);
-    static Vector3 CameraToWorld(Vector3 worldPos, Matrix cameraMatrix);
-    static Vector3 NearestPointOnLine(Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4);
-    static BoundingBox boundingBoxSized(Vector3 center, float size);
-    static BoundingBox shapeBoundingBox(SDFObject s);
-    static Vector3 VertexInterp(Vector4 p1, Vector4 p2, float threshold);
-    int RayPlaneIntersection(const Vector3 RayOrigin, const Vector3 RayDirection, const Vector3 PlanePoint,
-                     const Vector3 PlaneNormal, Vector3* IntersectionPoint);
+    inline void deselect() {m_selected_sphere.set_null();};
+    void select(const SDFIterator& i);
+    std::optional<SDFIterator> getSelected();
+    stlplus::ntree<SDFObject>& getTree();
+    void clear();
 private:
     struct
     {
@@ -52,6 +50,7 @@ private:
         int resolution;
         int selected_params;
         int visualizer;
+        int blend;
     } m_main_locations {};
 
     // enum
@@ -61,15 +60,20 @@ private:
     // } m_visuals_mode;
 
 
-    std::vector<SDFObject> m_objects{};
+    std::vector<int> m_free_index {};
+    //std::vector<SDFObject> m_objects{};
+    stlplus::ntree<SDFObject> m_sdf_tree;
     bool m_needs_rebuild = true;
     int m_num_spheres = 0;
-    int m_selected_sphere = -1;
+    SDFIterator m_selected_sphere {};
     double m_last_save = 0;
     Shader m_main_shader{};
     ShaderLoader m_shader_files{};
     float m_run_time = 0.0f;
-    void appendMapFunction(std::string& result, bool use_color_as_index, int dynamic_index) const;
+    void appendMapFunction(std::string& result, bool use_color_as_index, SDFObject* dynamic_index);
+    void generateShaderObject(std::stringstream& content, SDFIterator current, int& count, bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent = false);
+    void generateShaderOperation(std::stringstream& content, SDFIterator current, int count, bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent = false);
+    void generateShaderContent(std::stringstream& content, SDFIterator current, int& count, bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent = false);
     static constexpr const char* vshader = SHADER_VERSION_PREFIX "\n in vec3 vertexPosition;    \n"
                                             "in vec2 vertexTexCoord;            \n"
                                             "out vec2 fragTexCoord;             \n"
@@ -354,334 +358,5 @@ private:
                                               {0, 9, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
                                               {0, 3, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
                                               {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}};
-
-   inline static std::string test { "#version 330\n"
-"out vec4 finalColor;\n"
-"uniform vec3 viewEye;\n"
-"uniform vec3 viewCenter;\n"
-"uniform float runTime;\n"
-"uniform float visualizer;\n"
-"uniform vec2 resolution;\n"
-"float sdRoundBox( vec3 p, vec3 b, float r )\n"
-"{\n"
-"  vec3 q = abs(p) - b;\n"
-"  return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0) - r;\n"
-"}\n"
-"\n"
-"float RoundBox( vec3 p, vec3 b, float r )\n"
-"{\n"
-"  vec3 q = abs(p) - b;\n"
-"  return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0) - r;\n"
-"}\n"
-"\n"
-"\n"
-"vec4 opSmoothUnion( vec4 a, vec4 b, float blend )\n"
-"{\n"
-"    float h =  max( blend-abs(a.x-b.x), 0.0 )/blend;\n"
-"    float m = h*h*0.5;\n"
-"    float s = m*blend*(1.0/2.0);\n"
-"    return (a.x<b.x) ? vec4(a.x-s,mix(a.gba,b.gba,m)) : vec4(b.x-s,mix(a.gba,b.gba,1.0-m));\n"
-"}\n"
-"\n"
-"vec4 BlobbyMin( vec4 a, vec4 b, float blend )\n"
-"{\n"
-"    float h =  max( blend-abs(a.x-b.x), 0.0 )/blend;\n"
-"    float m = h*h*0.5;\n"
-"    float s = m*blend*(1.0/2.0);\n"
-"    return (a.x<b.x) ? vec4(a.x-s,mix(a.gba,b.gba,m)) : vec4(b.x-s,mix(a.gba,b.gba,1.0-m));\n"
-"}\n"
-"\n"
-"vec4 Min( vec4 a, vec4 b )\n"
-"{\n"
-"    return (a.x<b.x) ? a : b;\n"
-"}\n"
-"\n"
-"vec4 opSmoothUnionSteppedColor( vec4 a, vec4 b, float blend )\n"
-"{\n"
-"    float h =  max( blend-abs(a.x-b.x), 0.0 )/blend;\n"
-"    float m = h*h*0.5;\n"
-"    float s = m*blend*(1.0/2.0);\n"
-"    return (a.x<b.x) ? vec4(a.x-s,a.gba) : vec4(b.x-s,b.gba);\n"
-"}\n"
-"\n"
-"vec4 opSmoothSubtraction( vec4 d1, vec4 d2, float k ) {\n"
-"    float dist = opSmoothUnion(d1,vec4(-d2.x, d2.gba),k).x;\n"
-"    return vec4(-dist, d2.gba);\n"
-"}\n"
-"\n"
-"vec4 opS( vec4 d1, vec4 d2 )\n"
-"{\n"
-"    return vec4(max(-d2.x,d1.x), d1.gba);\n"
-"}\n"
-"\n"
-"vec4 opU( vec4 d1, vec4 d2 )\n"
-"{\n"
-"    return (d1.x<d2.x) ? d1 : d2;\n"
-"}\n"
-"\n"
-"vec3 opSymX( vec3 p )\n"
-"{\n"
-"    p.x = abs(p.x);\n"
-"    return p;\n"
-"}\n"
-"vec3 opSymY( vec3 p )\n"
-"{\n"
-"    p.y = abs(p.y);\n"
-"    return p;\n"
-"}\n"
-"vec3 opSymZ( vec3 p )\n"
-"{\n"
-"    p.z = abs(p.z);\n"
-"    return p;\n"
-"}\n"
-"vec3 opSymXY( vec3 p )\n"
-"{\n"
-"    p.xy = abs(p.xy);\n"
-"    return p;\n"
-"}\n"
-"vec3 opSymXZ( vec3 p )\n"
-"{\n"
-"    p.xz = abs(p.xz);\n"
-"    return p;\n"
-"}\n"
-"vec3 opSymYZ( vec3 p )\n"
-"{\n"
-"    p.yz = abs(p.yz);\n"
-"    return p;\n"
-"}\n"
-"vec3 opSymXYZ( vec3 p )\n"
-"{\n"
-"    p.xyz = abs(p.xyz);\n"
-"    return p;\n"
-"}\n"
-"\n"
-"vec3 opRotateXYZ( vec3 p, vec3 theta)\n"
-"{\n"
-"    float cz = cos(theta.z);\n"
-"    float sz = sin(theta.z);\n"
-"    float cy = cos(theta.y);\n"
-"    float sy = sin(theta.y);\n"
-"    float cx = cos(theta.x);\n"
-"    float sx = sin(theta.x);\n"
-"\n"
-"    mat3 mat = mat3(\n"
-"                cz*cy,\n"
-"                cz*sy*sx - cx*sz,\n"
-"                sz*sx + cz*cx*sy,\n"
-"\n"
-"                cy*sz,\n"
-"                cz*cx + sz*sy*sx,\n"
-"                cx*sz*sy - cz*sx,\n"
-"\n"
-"                -sy,\n"
-"                cy*sx,\n"
-"                cy*cx);\n"
-"\n"
-"    return mat*p;\n"
-"}\n"
-"\n"
-"\n"
-"\n"
-"uniform vec3 selectionValues[5];\n"
-"\n"
-"vec4 signed_distance_field( in vec3 pos ){\n"
-"        vec4 distance = vec4(999999.,0,0,0);\n"
-"        distance = Min(\n"
-"                vec4(RoundBox(\n"
-"                                ((pos) - vec3(0,0,0)), // position\n"
-"                        vec3(0.99,0.99,0.99),// size\n"
-"                        0.01), // corner radius\n"
-"                        0.937255,0.627451,0.360784), // color\n"
-"                distance);\n"
-"        distance = BlobbyMin(\n"
-"                vec4(RoundBox(\n"
-"                                opRotateXYZ(\n"
-"                                        (pos) - selectionValues[0], // position\n"
-"                                        selectionValues[1]), // angle\n"
-"                                selectionValues[2],  // size\n"
-"                                selectionValues[4].x), // corner radius\n"
-"                        selectionValues[3]), // color\n"
-"                distance,\n"
-"                selectionValues[4].y); // blobbyness\n"
-"        return distance;\n"
-"}\n"
-"vec4 castRay( in vec3 ro, in vec3 rd )\n"
-"{\n"
-"    float tmin = 0.1;\n"
-"    float tmax = 300.0;\n"
-"\n"
-"    float t = tmin;\n"
-"    vec3 m = vec3(-1);\n"
-"    for( int i=0; i<64; i++ )\n"
-"    {\n"
-"        float precis = 0.0001*t;\n"
-"        vec4 res = signed_distance_field( ro+rd*t );\n"
-"        if( res.x<precis || t>tmax ) break;\n"
-"        t += res.x;\n"
-"        m = res.gba;\n"
-"    }\n"
-"\n"
-"    if( t>tmax ) m=vec3(-1);\n"
-"    return vec4( t, m );\n"
-"}\n"
-"\n"
-"\n"
-"float calcSoftshadow( in vec3 ro, in vec3 rd, in float mint, in float tmax )\n"
-"{\n"
-"    float res = 1.0;\n"
-"    float t = mint;\n"
-"    for( int i=0; i<16; i++ )\n"
-"    {\n"
-"        float h = signed_distance_field( ro + rd*t ).x;\n"
-"        res = min( res, 8.0*h/t );\n"
-"        t += clamp( h, 0.02, 0.10 );\n"
-"        if( h<0.001 || t>tmax ) break;\n"
-"    }\n"
-"    return clamp( res, 0.0, 1.0 );\n"
-"}\n"
-"\n"
-"vec3 calcNormal( in vec3 pos )\n"
-"{\n"
-"    vec2 e = vec2(1.0,-1.0)*0.5773*0.0005;\n"
-"    return normalize( e.xyy*signed_distance_field( pos + e.xyy ).x +\n"
-"                      e.yyx*signed_distance_field( pos + e.yyx ).x +\n"
-"                      e.yxy*signed_distance_field( pos + e.yxy ).x +\n"
-"                      e.xxx*signed_distance_field( pos + e.xxx ).x );\n"
-"    /*\n"
-"    vec3 eps = vec3( 0.0005, 0.0, 0.0 );\n"
-"    vec3 nor = vec3(\n"
-"        signed_distance_field(pos+eps.xyy).x - signed_distance_field(pos-eps.xyy).x,\n"
-"        signed_distance_field(pos+eps.yxy).x - signed_distance_field(pos-eps.yxy).x,\n"
-"        signed_distance_field(pos+eps.yyx).x - signed_distance_field(pos-eps.yyx).x );\n"
-"    return normalize(nor);\n"
-"    */\n"
-"}\n"
-"\n"
-"float calcAO( in vec3 pos, in vec3 nor )\n"
-"{\n"
-"    float occ = 0.0;\n"
-"    float sca = 1.0;\n"
-"    for( int i=0; i<5; i++ )\n"
-"    {\n"
-"        float hr = 0.01 + 0.12*float(i)/4.0;\n"
-"        vec3 aopos =  nor * hr + pos;\n"
-"        float dd = signed_distance_field( aopos ).x;\n"
-"        occ += -(dd-hr)*sca;\n"
-"        sca *= 0.95;\n"
-"    }\n"
-"    return clamp( 1.0 - 3.0*occ, 0.0, 1.0 );\n"
-"}\n"
-"\n"
-"vec3 render( in vec3 ro, in vec3 rd )\n"
-"{\n"
-"    vec3 color =\n"
-"#ifdef FALSE_COLOR_MODE\n"
-"    vec3(0.);\n"
-"#else\n"
-"    vec3(0.4, 0.5, 0.6) +rd.y*0.4;\n"
-"#endif\n"
-"    vec4 result = castRay(ro,rd);\n"
-"    float t = result.x;\n"
-"    vec3 m = result.yzw;\n"
-"    if( m.r>-0.5 )\n"
-"    {\n"
-"        vec3 pos = ro + t*rd;\n"
-"        vec3 nor = calcNormal( pos );\n"
-"        // vec3 ref = reflect( rd, nor );\n"
-"\n"
-"        // material\n"
-"        color = m;\n"
-"\n"
-"        #ifndef FALSE_COLOR_MODE\n"
-"\n"
-"        // lighting\n"
-"        // float occ = calcAO( pos, nor );\n"
-"        vec3  light_dir = normalize( vec3(cos(-0.4), sin(0.7), -0.6) );\n"
-"        vec3  hal = normalize( light_dir-rd );\n"
-"        float ambient = clamp( 0.5+0.5*nor.y, 0.0, 1.0 );\n"
-"        float diffuse = clamp( dot( nor, light_dir ), 0.0, 1.0 );\n"
-"        float back_light = clamp( dot( nor, normalize(vec3(-light_dir.x,0.0,-light_dir.z))), 0.0, 1.0 )*clamp( 1.0-pos.y\n"
-",0.0,1.0);\n"
-"\n"
-"        // TODO: turn back on shadows\n"
-"        diffuse *= calcSoftshadow( pos, light_dir, 0.02, 2.5 );\n"
-"\n"
-"        float spe = pow( clamp( dot( nor, hal ), 0.0, 1.0 ),16.0)*\n"
-"                    diffuse *\n"
-"                    (0.04 + 0.96*pow( clamp(1.0+dot(hal,rd),0.0,1.0), 5.0 ));\n"
-"\n"
-"        vec3 lin = vec3(0.0);\n"
-"        lin += 1.30*diffuse*vec3(1.00,0.80,0.55);\n"
-"        lin += 0.40*ambient*vec3(0.40,0.60,1.00);//*occ;\n"
-"        lin += 0.50*back_light*vec3(0.25,0.25,0.25);//*occ;\n"
-"        color = color*lin;\n"
-"        color += 10.00*spe*vec3(1.00,0.90,0.70);\n"
-"        #endif\n"
-"    }\n"
-"\n"
-"    return vec3( clamp(color,0.0,1.0) );\n"
-"}\n"
-"\n"
-"mat3 setCamera( in vec3 ro, in vec3 ta, float cr )\n"
-"{\n"
-"    vec3 cw = normalize(ta-ro);\n"
-"    vec3 cp = vec3(sin(cr), cos(cr),0.0);\n"
-"    vec3 cu = normalize( cross(cw,cp) );\n"
-"    vec3 cv = normalize( cross(cu,cw) );\n"
-"    return mat3( cu, cv, cw );\n"
-"}\n"
-"\n"
-"// plane.xyz must be normalized\n"
-"float planeIntersect( in vec3 ro, in vec3 rd, in vec4 plane )  {\n"
-"    return -(dot(ro,plane.xyz)+plane.w)/dot(rd,plane.xyz);\n"
-"}\n"
-"\n"
-"void main()\n"
-"{\n"
-"    vec3 tot = vec3(0.0);\n"
-"// TODO:  turn back on AA\n"
-"#define AA 1\n"
-"#if AA>1\n"
-"    for( int m=0; m<AA; m++ )\n"
-"    for( int n=0; n<AA; n++ )\n"
-"    {\n"
-"        // pixel coordinates\n"
-"        vec2 o = vec2(float(m),float(n)) / float(AA) - 0.5;\n"
-"        vec2 p = (-resolution.xy + 2.0*(gl_FragCoord.xy+o))/resolution.y;\n"
-"#else\n"
-"        vec2 p = (-resolution.xy + 2.0*gl_FragCoord.xy)/resolution.y;\n"
-"#endif\n"
-"\n"
-"        vec3 ro = viewEye;\n"
-"        vec3 ta = viewCenter;\n"
-"\n"
-"        mat3 camera_to_world = setCamera( ro, ta, 0.0 );\n"
-"        vec3 ray_direction = camera_to_world * normalize( vec3(p.xy,2.0) );\n"
-"\n"
-"        vec3 col = render( ro, ray_direction );\n"
-"\n"
-"        col = pow( col, vec3(0.4545) ); // gamma\n"
-"\n"
-"        if (visualizer > 0.) {\n"
-"            float dist = planeIntersect(ro, ray_direction, vec4(0,0,1.,0));\n"
-"            if (dist > 0.) {\n"
-"                vec3 t = ro + dist*ray_direction;\n"
-"                float sdf_value = signed_distance_field(t).x;\n"
-"                vec4 field_color = (sdf_value < 0. ?\n"
-"                                    vec4(1.,0.,0., sin(sdf_value*8.+runTime*2.)/4. + 0.25):\n"
-"                                    vec4(0.15, 0.15,0.8,sin(sdf_value*8.-runTime*2.)/4. + 0.25 )) ;\n"
-"\n"
-"                col = mix(col, field_color.rgb, field_color.a);\n"
-"            }\n"
-"        }\n"
-"\n"
-"        tot += col;\n"
-"#if AA>1\n"
-"    }\n"
-"    tot /= float(AA*AA);\n"
-"#endif\n"
-"\n"
-"    finalColor = vec4( tot, 1.0 );\n"
-"}\n"};
 };
 #endif // SDFCREATOR_H
