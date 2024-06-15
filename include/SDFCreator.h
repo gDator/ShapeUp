@@ -23,8 +23,7 @@ class SDFCreator
 public:
     SDFCreator();
     void rebuildShaders();
-    void addShape(SDFObjectType type, Color color);
-    void addOperation(const SDFOperationType type);
+    void addShape(Color color);
     void deleteObject();
     //TODO: export, save, open
     // void save(std::filesystem::path path);

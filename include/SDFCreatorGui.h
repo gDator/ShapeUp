@@ -66,10 +66,6 @@ private:
     void drawGui();
     void handleInput();
     void drawManipulator();
-
-    SDFType m_type = SDFType::OBJECT;
-    SDFObjectType m_selected_object_type = SDFObjectType::NONE;
-    SDFOperationType m_selected_operation_type = SDFOperationType::NONE;
     SDFIterator m_selected_iterator;
 
     inline static const std::vector<std::tuple<SDFOperationType, std::string>> operation_types = {

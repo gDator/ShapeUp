@@ -1,5 +1,5 @@
 out vec4 finalColor;
-// int vec2 texCoord;
+in vec2 fragTexCoord;
 uniform vec3 viewEye;
 uniform vec3 viewCenter;
 uniform vec2 resolution;

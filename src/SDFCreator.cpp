@@ -8,6 +8,7 @@
 #include "raymath.h"
 
 #include <iostream>
+#include <external/glad.h>
 
 SDFCreator::SDFCreator()
 {
@@ -21,10 +22,6 @@ void SDFCreator::rebuildShaders()
 {
     m_needs_rebuild = false;
     UnloadShader(m_main_shader);
-    for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
-    {
-        i->reset();
-    }
     std::string map_function;
     if (m_selected_sphere.valid())
     {
@@ -61,20 +58,23 @@ void SDFCreator::rebuildShaders()
 
 void SDFCreator::deleteObject()
 {
-    // memmove(&spheres[index], &spheres[index + 1], sizeof(Sphere) * (m_num_spheres - index));
     if (m_selected_sphere.valid())
     {
-        const auto subtree = m_sdf_tree.subtree(m_selected_sphere, 0);
-        const auto parent = m_sdf_tree.parent(m_selected_sphere);
-        // add subtree
-        if (parent.valid())
+        //cut off subtree and append
+        if(m_sdf_tree.children(m_selected_sphere) > 0)
         {
-            m_sdf_tree.insert(parent, subtree);
-        }
-        else
-        {
-            // add at root node
-            m_sdf_tree.insert(subtree);
+            const auto subtree = m_sdf_tree.subtree(m_selected_sphere, 0);
+            const auto parent = m_sdf_tree.parent(m_selected_sphere);
+            // add subtree
+            if (parent.valid())
+            {
+                m_sdf_tree.insert(parent, subtree);
+            }
+            else
+            {
+                // add at root node
+                m_sdf_tree.insert(subtree);
+            }
         }
         m_sdf_tree.erase(m_selected_sphere);
         m_selected_sphere.set_null();
@@ -83,9 +83,16 @@ void SDFCreator::deleteObject()
     }
 }
 
-void SDFCreator::addShape(SDFObjectType type, Color color)
+void SDFCreator::addShape(Color color)
 {
-    SDFObject obj(type);
+    if(m_sdf_tree.size() <= 0)
+    {
+        SDFObject root;
+        root.color = {color.r, color.g, color.b};
+        m_sdf_tree.insert(root);
+        return;
+    }
+    SDFObject obj;
     obj.size = {1, 1, 1};
     obj.color = {color.r, color.g, color.b};
     if (m_selected_sphere.valid())
@@ -107,28 +114,6 @@ void SDFCreator::addShape(SDFObjectType type, Color color)
 
     m_num_spheres++;
     rebuild();
-}
-void SDFCreator::addOperation(const SDFOperationType type)
-{
-    const SDFObject obj(type);
-    // operation can only have two children
-    if (m_selected_sphere.valid())
-    {
-        if (m_selected_sphere->getType() == SDFType::OPERATION && m_sdf_tree.children(m_selected_sphere) < 2)
-        {
-            m_sdf_tree.append(m_selected_sphere, obj);
-            m_num_spheres++;
-            m_needs_rebuild = true;
-        }
-        else
-        {
-            m_sdf_tree.append(m_sdf_tree.root(), obj);
-        }
-    }
-    else
-    {
-        m_sdf_tree.append(m_sdf_tree.root(), obj);
-    }
 }
 
 /*void SDFCreator::save(std::filesystem::path path)
@@ -196,7 +181,7 @@ void SDFCreator::loadData() const
     {
         const SDFObject* s = &(*m_selected_sphere);
         float used_radius = fmaxf(0.01, fminf(s->corner_radius, fminf(s->size.x, fminf(s->size.y, s->size.z))));
-        float data[20] = {
+        float data[18] = {
             s->pos.x,
             s->pos.y,
             s->pos.z,
@@ -420,18 +405,29 @@ void SDFCreator::unloadShader()
 void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
 {
     const float start = GetTime();
-    std::string shader_source = "";
+    std::string shader_source;
     shader_source += SHADER_VERSION_PREFIX;
+    shader_source += "\nuniform float blend;\n";
     shader_source += m_shader_files.getShaderPrefixFS();
     appendMapFunction(shader_source, true, nullptr);
     shader_source += m_shader_files.getSelectionFS();
-
     Shader shader = LoadShaderFromMemory(vshader, shader_source.c_str());
-
     int eye_loc = GetShaderLocation(shader, "viewEye");
     int center_loc = GetShaderLocation(shader, "viewCenter");
     int resolution_loc = GetShaderLocation(shader, "resolution");
+    int blend_loc = GetShaderLocation(shader, "blend\0");
+    int count = -1;
+   /*glGetProgramiv(shader.id, GL_ACTIVE_UNIFORMS, &count);
+    printf("Active Unifroms: %d\n", count);
+    for(int i = 0; i < count; ++i)
+    {
+        int length, size;
+        GLenum type;
+        char name[20];
+        glGetActiveUniform(shader.id, i, 20, &length, &size, &type, name);
+        printf("Unifrom #%d Type %u Name %s\n", i, type, name);
 
+    }*/
     SetShaderValue(shader, eye_loc, &camera.position, SHADER_UNIFORM_VEC3);
     SetShaderValue(shader, center_loc, &camera.target, SHADER_UNIFORM_VEC3);
     SetShaderValue(shader, resolution_loc, (float[2]){(float)GetScreenWidth(), (float)GetScreenHeight()},
@@ -443,19 +439,20 @@ void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
     {
         BeginShaderMode(shader);
         {
-            rlBegin(RL_QUADS);
-            rlTexCoord2f(x - 1, y - 1);
-            rlVertex2f(x - 1, y - 1);
+             rlBegin(RL_QUADS);
+             rlTexCoord2f(x - 1, y - 1);
+             rlVertex2f(x - 1, y - 1);
 
-            rlTexCoord2f(x - 1, y + 1);
-            rlVertex2f(x - 1, y + 1);
+             rlTexCoord2f(x - 1, y + 1);
+             rlVertex2f(x - 1, y + 1);
 
-            rlTexCoord2f(x + 1, y + 1);
-            rlVertex2f(x + 1, y + 1);
+             rlTexCoord2f(x + 1, y + 1);
+             rlVertex2f(x + 1, y + 1);
 
-            rlTexCoord2f(x + 1, y - 1);
-            rlVertex2f(x + 1, y - 1);
-            rlEnd();
+             rlTexCoord2f(x + 1, y - 1);
+             rlVertex2f(x + 1, y - 1);
+             rlEnd();
+
         }
         EndShaderMode();
     }
@@ -465,15 +462,12 @@ void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
         rlReadTexturePixels(target.texture.id, target.texture.width, target.texture.height, target.texture.format));
 
     int object_index = ((int)pixels[(x + target.texture.width * (target.texture.height - y)) * 4]) - 1;
-    auto image = LoadImageFromTexture(target.texture);
-    ExportImage(image, "selection.png");
     std::free(pixels);
 
     UnloadRenderTexture(target);
     UnloadShader(shader);
 
     std::cout << "picking object took " << (int)((-start + GetTime()) * 1000) << "ms\n";
-    std::cout << "image size" << image.height << ", " << image.width;
     auto old_selected = m_selected_sphere;
     for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); i++)
     {
@@ -521,21 +515,19 @@ void SDFCreator::clear()
 
 void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index, SDFObject* dynamic_index)
 {
-    std::string map = "";
 
-    map += "uniform vec3 selectionValues[6];\n\n";
-
-#if DEMO_VIDEO_FEATURES
-    if (false_color_mode)
+    //reset all sdf creation
+    for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
     {
-        map += "#define FALSE_COLOR_MODE 1\n\n";
+        i->reset();
     }
-#endif
-
-    map += "vec4 signed_distance_field( in vec3 pos ){\n"
-           "\tvec4 distance = vec4(999999.,0,0,0);\n";
+    std::string map;
+    map += "uniform vec3 selectionValues[6];\n\n";
+    map += "vec4 signed_distance_field(vec3 pos ){\n"
+           "\tvec4 distance = vec4(999999., 0, 0, 0);\n";
     int index_counter = 0;
     std::stringstream shader_content;
+
     for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
     {
         SDFObject s = *i;

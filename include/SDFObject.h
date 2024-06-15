@@ -42,10 +42,11 @@ public:
     } mirror{};
     bool subtract = false;
     int m_index = 0;
-private:
     SDFOperationType m_operation_type = SDFOperationType::NONE;
     SDFObjectType m_object_type = SDFObjectType::NONE;
     SDFType m_type = SDFType::OBJECT;
     bool m_done = false;
+private:
+
 };
 #endif // SDFOBJECT_H

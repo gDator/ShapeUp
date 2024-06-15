@@ -110,81 +110,31 @@ void SDFCreatorGui::drawGui()
         {
             // m_sdf_creator.exportObj();
         }
-        if (ImGui::BeginCombo("Type", types_to_string.at(m_type).c_str()))
-        {
-            if (ImGui::Selectable("Object", (m_type==SDFType::OBJECT)))
-            {
-                m_type = SDFType::OBJECT;
-            }
-            if(ImGui::Selectable("Operation", (m_type==SDFType::OPERATION)))
-            {
-                m_type = SDFType::OPERATION;
-            }
-            ImGui::EndCombo();
-        }
-
-        if (m_type == SDFType::OBJECT)
-        {
-            if (ImGui::BeginCombo("Object", object_to_string.at(m_selected_object_type).c_str()))
-            {
-                for (auto&& [o_type, description] : object_types)
-                {
-                    if (ImGui::Selectable(description.c_str(), (m_selected_object_type == o_type)))
-                    {
-                        m_selected_object_type = o_type;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-
-        }
-        else
-        {
-            if (ImGui::BeginCombo("Operation", operation_to_string.at(m_selected_operation_type).c_str()))
-            {
-                for (auto&& [o_type, description] : operation_types)
-                {
-                    if (ImGui::Selectable(description.c_str(), (m_selected_operation_type == o_type)))
-                    {
-                        m_selected_operation_type = o_type;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-
-        }
-        if(ImGui::Button("Clear"))
+        if (ImGui::Button("Clear"))
         {
             m_sdf_creator.clear();
         }
-        if(ImGui::Button("Add"))
+        if (ImGui::Button("Add"))
         {
-            if(m_type == SDFType::OBJECT)
-            {
-                m_sdf_creator.addShape(m_selected_object_type,{255, 255, 255});
-            }
-            else
-            {
-                m_sdf_creator.addOperation(m_selected_operation_type);
-            }
+            m_sdf_creator.addShape({255, 255, 255});
         }
-        if(ImGui::Button("Delete"))
+        if (ImGui::Button("Delete"))
         {
             m_sdf_creator.deleteObject();
         }
-        if(ImGui::BeginListBox("Structure"))
+        if (ImGui::BeginListBox("Structure"))
         {
             std::string object_string{};
-            for(auto i = m_sdf_creator.getTree().prefix_begin(); i != m_sdf_creator.getTree().prefix_end(); ++i)
+            for (auto i = m_sdf_creator.getTree().prefix_begin(); i != m_sdf_creator.getTree().prefix_end(); ++i)
             {
-                object_string = std::string( m_sdf_creator.getTree().depth(i.simplify()), '-');
+                object_string = std::string(m_sdf_creator.getTree().depth(i.simplify()), '-');
                 object_string += i->ToString();
                 bool selected = false;
-                if(m_sdf_creator.isSelected())
+                if (m_sdf_creator.isSelected())
                 {
                     selected = &(*m_sdf_creator.getSelected().value()) == &(*i.simplify());
                 }
-                if(ImGui::Selectable(object_string.c_str(), selected))
+                if (ImGui::Selectable(object_string.c_str(), selected))
                 {
                     m_sdf_creator.select(i.simplify());
                 }
@@ -196,6 +146,51 @@ void SDFCreatorGui::drawGui()
         if (m_sdf_creator.isSelected())
         {
             SDFObject* old = &(*m_sdf_creator.getSelected().value());
+            if (ImGui::BeginCombo("Type", types_to_string.at(old->m_type).c_str()))
+            {
+                if (ImGui::Selectable("Object", (old->m_type == SDFType::OBJECT)))
+                {
+                    old->m_type = SDFType::OBJECT;
+                    m_sdf_creator.rebuild();
+                }
+                if (ImGui::Selectable("Operation", (old->m_type == SDFType::OPERATION)))
+                {
+                    old->m_type = SDFType::OPERATION;
+                    m_sdf_creator.rebuild();
+                }
+                ImGui::EndCombo();
+            }
+
+            if (old->m_type == SDFType::OBJECT)
+            {
+                if (ImGui::BeginCombo("Object", object_to_string.at(old->m_object_type).c_str()))
+                {
+                    for (auto&& [o_type, description] : object_types)
+                    {
+                        if (ImGui::Selectable(description.c_str(), (old->m_object_type == o_type)))
+                        {
+                            old->m_object_type = o_type;
+                            m_sdf_creator.rebuild();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+            else
+            {
+                if (ImGui::BeginCombo("Operation", operation_to_string.at(old->m_operation_type).c_str()))
+                {
+                    for (auto&& [o_type, description] : operation_types)
+                    {
+                        if (ImGui::Selectable(description.c_str(), (old->m_operation_type == o_type)))
+                        {
+                            old->m_operation_type = o_type;
+                            m_sdf_creator.rebuild();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
             ImGui::DragFloat3("Position", &old->pos.x);
             ImGui::DragFloat3("Scale", &old->size.x);
             ImGui::DragFloat3("Rotation", &old->angle.x);
@@ -290,15 +285,7 @@ void SDFCreatorGui::handleInput()
 
         if (IsKeyPressed(KEY_A))
         {
-            if(m_type == SDFType::OBJECT)
-            {
-                m_sdf_creator.addShape(m_selected_object_type,{255, 255, 255});
-            }
-            else
-            {
-                m_sdf_creator.addOperation(m_selected_operation_type);
-            }
-
+            m_sdf_creator.addShape({255, 255, 255});
         }
 
         // add shape
@@ -353,13 +340,12 @@ void SDFCreatorGui::handleInput()
         {
             if (m_controlled_axis.x + m_controlled_axis.y + m_controlled_axis.z == 1)
             {
-                Vector3 nearest =
-                    NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                                   Vector3Add(m_sdf_creator.getSelected().value()->pos,
-                                                              (Vector3){static_cast<float>(m_controlled_axis.x),
-                                                                        static_cast<float>(m_controlled_axis.y),
-                                                                        static_cast<float>(m_controlled_axis.z)}),
-                                                   ray.position, Vector3Add(ray.position, ray.direction));
+                Vector3 nearest = NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                                     Vector3Add(m_sdf_creator.getSelected().value()->pos,
+                                                                (Vector3){static_cast<float>(m_controlled_axis.x),
+                                                                          static_cast<float>(m_controlled_axis.y),
+                                                                          static_cast<float>(m_controlled_axis.z)}),
+                                                     ray.position, Vector3Add(ray.position, ray.direction));
 
                 m_sdf_creator.getSelected().value()->pos = nearest;
             }
@@ -378,9 +364,8 @@ void SDFCreatorGui::handleInput()
                     plane_normal = Vector3Subtract(m_camera.position, m_camera.target);
                 }
 
-                if (RayPlaneIntersection(ray.position, ray.direction,
-                                                       m_sdf_creator.getSelected().value()->pos, plane_normal,
-                                                       &intersection))
+                if (RayPlaneIntersection(ray.position, ray.direction, m_sdf_creator.getSelected().value()->pos,
+                                         plane_normal, &intersection))
                 {
                     m_sdf_creator.getSelected().value()->pos = intersection;
                 }
@@ -429,8 +414,8 @@ void SDFCreatorGui::handleInput()
         {
             Vector3 nearest =
                 NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
-                                               ray.position, Vector3Add(ray.position, ray.direction));
+                                   Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
+                                   ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = m_sdf_creator.getSelected().value()->pos.x - nearest.x;
             m_mouse_action = Control::CONTROL_POS_X;
@@ -441,8 +426,8 @@ void SDFCreatorGui::handleInput()
         {
             Vector3 nearest =
                 NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
-                                               ray.position, Vector3Add(ray.position, ray.direction));
+                                   Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
+                                   ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = m_sdf_creator.getSelected().value()->pos.y - nearest.y;
             m_mouse_action = Control::CONTROL_POS_Y;
@@ -453,50 +438,50 @@ void SDFCreatorGui::handleInput()
         {
             Vector3 nearest =
                 NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
-                                               ray.position, Vector3Add(ray.position, ray.direction));
+                                   Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
+                                   ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = m_sdf_creator.getSelected().value()->pos.z - nearest.z;
             m_mouse_action = Control::CONTROL_POS_Z;
         }
-        else if (GetRayCollisionBox(ray, boundingBoxSized(
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos,
-                                                        (Vector3){m_sdf_creator.getSelected().value()->size.x, 0, 0}),
-                                             0.2))
+        else if (GetRayCollisionBox(
+                     ray, boundingBoxSized(Vector3Add(m_sdf_creator.getSelected().value()->pos,
+                                                      (Vector3){m_sdf_creator.getSelected().value()->size.x, 0, 0}),
+                                           0.2))
                      .hit)
         {
             Vector3 nearest =
                 NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
-                                               ray.position, Vector3Add(ray.position, ray.direction));
+                                   Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
+                                   ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = nearest.x - m_sdf_creator.getSelected().value()->size.x;
             m_mouse_action = Control::CONTROL_SCALE_X;
         }
-        else if (GetRayCollisionBox(ray, boundingBoxSized(
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos,
-                                                        (Vector3){0, m_sdf_creator.getSelected().value()->size.y, 0}),
-                                             0.2))
+        else if (GetRayCollisionBox(
+                     ray, boundingBoxSized(Vector3Add(m_sdf_creator.getSelected().value()->pos,
+                                                      (Vector3){0, m_sdf_creator.getSelected().value()->size.y, 0}),
+                                           0.2))
                      .hit)
         {
             Vector3 nearest =
                 NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
-                                               ray.position, Vector3Add(ray.position, ray.direction));
+                                   Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
+                                   ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = nearest.y - m_sdf_creator.getSelected().value()->size.y;
             m_mouse_action = Control::CONTROL_SCALE_Y;
         }
-        else if (GetRayCollisionBox(ray, boundingBoxSized(
-                                             Vector3Add(m_sdf_creator.getSelected().value()->pos,
-                                                        (Vector3){0, 0, m_sdf_creator.getSelected().value()->size.z}),
-                                             0.2))
+        else if (GetRayCollisionBox(
+                     ray, boundingBoxSized(Vector3Add(m_sdf_creator.getSelected().value()->pos,
+                                                      (Vector3){0, 0, m_sdf_creator.getSelected().value()->size.z}),
+                                           0.2))
                      .hit)
         {
             Vector3 nearest =
                 NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                               Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
-                                               ray.position, Vector3Add(ray.position, ray.direction));
+                                   Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
+                                   ray.position, Vector3Add(ray.position, ray.direction));
 
             drag_offset = nearest.z - m_sdf_creator.getSelected().value()->size.z;
             m_mouse_action = Control::CONTROL_SCALE_Z;
@@ -570,53 +555,47 @@ void SDFCreatorGui::handleInput()
     }
     if (m_mouse_action == Control::CONTROL_POS_X)
     {
-        Vector3 nearest =
-            NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
-                                           ray.position, Vector3Add(ray.position, ray.direction));
+        Vector3 nearest = NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
+                                             ray.position, Vector3Add(ray.position, ray.direction));
 
         m_sdf_creator.getSelected().value()->pos.x = nearest.x + drag_offset;
     }
     else if (m_mouse_action == Control::CONTROL_POS_Y)
     {
-        Vector3 nearest =
-            NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
-                                           ray.position, Vector3Add(ray.position, ray.direction));
+        Vector3 nearest = NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
+                                             ray.position, Vector3Add(ray.position, ray.direction));
         m_sdf_creator.getSelected().value()->pos.y = nearest.y + drag_offset;
     }
     else if (m_mouse_action == Control::CONTROL_POS_Z)
     {
-        Vector3 nearest =
-            NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
-                                           ray.position, Vector3Add(ray.position, ray.direction));
+        Vector3 nearest = NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
+                                             ray.position, Vector3Add(ray.position, ray.direction));
         m_sdf_creator.getSelected().value()->pos.z = nearest.z + drag_offset;
     }
     else if (m_mouse_action == Control::CONTROL_SCALE_X)
     {
-        Vector3 nearest =
-            NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
-                                           ray.position, Vector3Add(ray.position, ray.direction));
+        Vector3 nearest = NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){1, 0, 0}),
+                                             ray.position, Vector3Add(ray.position, ray.direction));
 
         m_sdf_creator.getSelected().value()->size.x = fmaxf(0, nearest.x - drag_offset);
     }
     else if (m_mouse_action == Control::CONTROL_SCALE_Y)
     {
-        Vector3 nearest =
-            NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
-                                           ray.position, Vector3Add(ray.position, ray.direction));
+        Vector3 nearest = NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 1, 0}),
+                                             ray.position, Vector3Add(ray.position, ray.direction));
 
         m_sdf_creator.getSelected().value()->size.y = fmaxf(0, nearest.y - drag_offset);
     }
     else if (m_mouse_action == Control::CONTROL_SCALE_Z)
     {
-        Vector3 nearest =
-            NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
-                                           Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
-                                           ray.position, Vector3Add(ray.position, ray.direction));
+        Vector3 nearest = NearestPointOnLine(m_sdf_creator.getSelected().value()->pos,
+                                             Vector3Add(m_sdf_creator.getSelected().value()->pos, (Vector3){0, 0, 1}),
+                                             ray.position, Vector3Add(ray.position, ray.direction));
 
         m_sdf_creator.getSelected().value()->size.z = fmaxf(0, nearest.z - drag_offset);
     }
