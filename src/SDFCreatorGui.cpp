@@ -98,17 +98,17 @@ void SDFCreatorGui::drawGui()
         m_edit = ImGui::IsWindowFocused();
         if (ImGui::Button("Save"))
         {
-            // m_sdf_creator.save("./file.shapeup");
+            m_sdf_creator.save("./file.shapeup");
         }
         ImGui::SameLine();
         if (ImGui::Button("Load"))
         {
-            // m_sdf_creator.openSnapshot("./file.shapeup");
+            m_sdf_creator.load("./file.shapeup");
         }
         ImGui::SameLine();
         if (ImGui::Button("Export"))
         {
-            // m_sdf_creator.exportObj();
+            m_sdf_creator.exportObj();
         }
         if (ImGui::Button("Clear"))
         {
@@ -128,7 +128,7 @@ void SDFCreatorGui::drawGui()
             for (auto i = m_sdf_creator.getTree().prefix_begin(); i != m_sdf_creator.getTree().prefix_end(); ++i)
             {
                 object_string = std::string(m_sdf_creator.getTree().depth(i.simplify()), '-');
-                object_string += i->ToString();
+                object_string += ObjectToString(*i);
                 bool selected = false;
                 if (m_sdf_creator.isSelected())
                 {
@@ -146,30 +146,30 @@ void SDFCreatorGui::drawGui()
         if (m_sdf_creator.isSelected())
         {
             SDFObject* old = &(*m_sdf_creator.getSelected().value());
-            if (ImGui::BeginCombo("Type", types_to_string.at(old->m_type).c_str()))
+            if (ImGui::BeginCombo("Type", types_to_string.at(old->type).c_str()))
             {
-                if (ImGui::Selectable("Object", (old->m_type == SDFType::OBJECT)))
+                if (ImGui::Selectable("Object", (old->type == SDFType::OBJECT)))
                 {
-                    old->m_type = SDFType::OBJECT;
+                    old->type = SDFType::OBJECT;
                     m_sdf_creator.rebuild();
                 }
-                if (ImGui::Selectable("Operation", (old->m_type == SDFType::OPERATION)))
+                if (ImGui::Selectable("Operation", (old->type == SDFType::OPERATION)))
                 {
-                    old->m_type = SDFType::OPERATION;
+                    old->type = SDFType::OPERATION;
                     m_sdf_creator.rebuild();
                 }
                 ImGui::EndCombo();
             }
 
-            if (old->m_type == SDFType::OBJECT)
+            if (old->type == SDFType::OBJECT)
             {
-                if (ImGui::BeginCombo("Object", object_to_string.at(old->m_object_type).c_str()))
+                if (ImGui::BeginCombo("Object", object_to_string.at(old->object_type).c_str()))
                 {
                     for (auto&& [o_type, description] : object_types)
                     {
-                        if (ImGui::Selectable(description.c_str(), (old->m_object_type == o_type)))
+                        if (ImGui::Selectable(description.c_str(), (old->object_type == o_type)))
                         {
-                            old->m_object_type = o_type;
+                            old->object_type = o_type;
                             m_sdf_creator.rebuild();
                         }
                     }
@@ -178,13 +178,13 @@ void SDFCreatorGui::drawGui()
             }
             else
             {
-                if (ImGui::BeginCombo("Operation", operation_to_string.at(old->m_operation_type).c_str()))
+                if (ImGui::BeginCombo("Operation", operation_to_string.at(old->operation_type).c_str()))
                 {
                     for (auto&& [o_type, description] : operation_types)
                     {
-                        if (ImGui::Selectable(description.c_str(), (old->m_operation_type == o_type)))
+                        if (ImGui::Selectable(description.c_str(), (old->operation_type == o_type)))
                         {
-                            old->m_operation_type = o_type;
+                            old->operation_type = o_type;
                             m_sdf_creator.rebuild();
                         }
                     }
@@ -210,34 +210,6 @@ void SDFCreatorGui::drawGui()
             // ImGui::Checkbox("Y", &old->mirror.y);
             // ImGui::SameLine();
             // ImGui::Checkbox("Z", &old->mirror.z);
-
-            if (memcmp(&old->mirror, &m_sdf_creator.getSelected().value()->mirror, sizeof(old->mirror)) ||
-                old->subtract != m_sdf_creator.getSelected().value()->subtract)
-            {
-                m_sdf_creator.rebuild();
-
-                BoundingBox bb = shapeBoundingBox(*m_sdf_creator.getSelected().value());
-                if (m_sdf_creator.getSelected().value()->mirror.x && bb.max.x <= 0)
-                {
-                    m_sdf_creator.getSelected().value()->pos.x *= -1;
-                    m_sdf_creator.getSelected().value()->angle.y *= -1;
-                    m_sdf_creator.getSelected().value()->angle.z *= -1;
-                }
-
-                if (m_sdf_creator.getSelected().value()->mirror.y && bb.max.y <= 0)
-                {
-                    m_sdf_creator.getSelected().value()->pos.y *= -1;
-                    m_sdf_creator.getSelected().value()->angle.x *= -1;
-                    m_sdf_creator.getSelected().value()->angle.z *= -1;
-                }
-
-                if (m_sdf_creator.getSelected().value()->mirror.z && bb.max.z <= 0)
-                {
-                    m_sdf_creator.getSelected().value()->pos.z *= -1;
-                    m_sdf_creator.getSelected().value()->angle.y *= -1;
-                    m_sdf_creator.getSelected().value()->angle.x *= -1;
-                }
-            }
         }
         ImGui::End();
 

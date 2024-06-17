@@ -13,6 +13,7 @@ v0.1
 BUGS
 =======================================================================
 - 20240615-1: SDFCreator.cpp:521: appendMapFunction: reset moved from rebuildShaders to here otherwise SDF of SelectionShader is empty
+- 20240617-1: SDFCreator.cpp: Root node doesnt get created.
 
 TODO
 =======================================================================

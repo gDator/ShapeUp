@@ -26,9 +26,9 @@ public:
     void addShape(Color color);
     void deleteObject();
     //TODO: export, save, open
-    // void save(std::filesystem::path path);
-    // void openSnapshot(std::filesystem::path path);
-    // void exportObj();
+    void save(std::filesystem::path path);
+    void load(std::filesystem::path path);
+    void exportObj();
     bool loadShader(const Camera& camera, bool field_mode = false, float blend = 0.5);
     void unloadShader();
     void loadData() const;

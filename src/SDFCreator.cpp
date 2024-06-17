@@ -2,11 +2,14 @@
 // Created by Daniel Hagen on 10.06.2024.
 //
 #include "SDFCreator.h"
+
+#include "SDFUtil.h"
 #include "raylib.h"
 #include "rlgl.h"
 #include <cassert>
 #include "raymath.h"
 
+#include <fstream>
 #include <iostream>
 #include <external/glad.h>
 
@@ -60,8 +63,8 @@ void SDFCreator::deleteObject()
 {
     if (m_selected_sphere.valid())
     {
-        //cut off subtree and append
-        if(m_sdf_tree.children(m_selected_sphere) > 0)
+        // cut off subtree and append
+        if (m_sdf_tree.children(m_selected_sphere) > 0)
         {
             const auto subtree = m_sdf_tree.subtree(m_selected_sphere, 0);
             const auto parent = m_sdf_tree.parent(m_selected_sphere);
@@ -85,7 +88,7 @@ void SDFCreator::deleteObject()
 
 void SDFCreator::addShape(Color color)
 {
-    if(m_sdf_tree.size() <= 0)
+    if (m_sdf_tree.size() <= 0)
     {
         SDFObject root;
         root.color = {color.r, color.g, color.b};
@@ -98,7 +101,7 @@ void SDFCreator::addShape(Color color)
     if (m_selected_sphere.valid())
     {
         // No shapes on
-        if (m_selected_sphere->getType() == SDFType::OPERATION && m_sdf_tree.children(m_selected_sphere) < 2)
+        if (m_selected_sphere->type == SDFType::OPERATION && m_sdf_tree.children(m_selected_sphere) < 2)
         {
             m_sdf_tree.append(m_selected_sphere, obj);
         }
@@ -116,36 +119,89 @@ void SDFCreator::addShape(Color color)
     rebuild();
 }
 
-/*void SDFCreator::save(std::filesystem::path path)
+void SDFCreator::save(std::filesystem::path path)
 {
-    // save data and amount of objects into file
-    const int size = sizeof(int) + sizeof(SDFObject) * m_num_spheres;
-    char* data = static_cast<char*>(std::malloc(size));
-    *(int*)(void*)data = m_num_spheres;
-    memcpy(data + sizeof(int), m_objects.data(), m_num_spheres * sizeof(SDFObject));
+    std::ofstream file(path, std::ios::binary);
+    const unsigned int SERALIZE_VERSION = 1;
 
-    SaveFileData(path.string().c_str() , data, size);
 
-    std::free(data);
-    m_last_save = GetTime();
+    // save version and each object plus its level mount of objects into file
+    file << SERALIZE_VERSION;
+    for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
+    {
+        // save depth
+        file << static_cast<int>(m_sdf_tree.depth(i.simplify()));
+        file << (*i);
+    }
+    file.close();
 }
 
-void SDFCreator::openSnapshot(std::filesystem::path path)
+void SDFCreator::load(std::filesystem::path path)
 {
-    int size;
-    unsigned char* data = LoadFileData(path.string().c_str(), &size);
+    if(!std::filesystem::exists(path))
+    {
+        TraceLog(LOG_ERROR, "File does not exist");
+        return;
+    }
+    std::ifstream file(path, std::ios::binary);
+    unsigned int serialize_version = 0;
 
-    assert(data);
+    if(!file.is_open())
+    {
+        TraceLog(LOG_ERROR, "Could not open file");
+    }
+    file.clear();
+    file.seekg(std::ios::beg);
+    // save version and each object plus its level mount of objects into file
+    file >> serialize_version;
+    if (serialize_version != 1)
+    {
+        TraceLog(LOG_ERROR, "File version not supperoted");
+    }
 
-    m_num_spheres = *(int*)(void*)data;
-    memcpy(m_objects.data(), data + sizeof(int), sizeof(SDFObject) * m_num_spheres);
+    m_sdf_tree.erase();
+    //read node
+    if(!file.eof())
+    {
+        int depth = 0;
+        SDFObject obj;
+        file >> depth;
+        file >> obj;
+        if(depth != 0)
+        {
+            TraceLog(LOG_ERROR, "File corupt. No Root exists.");
+            return;
+        }
+        m_sdf_tree.insert(obj);
+    }
+    int last_depth = 0;
+    auto current = m_sdf_tree.root();
+    while (!file.eof())
+    {
+        // save depth
+        int depth = 0;
+        SDFObject obj;
+        file >> depth;
+        file >> obj;
+        std::cout << "Read" <<obj.index;
+        std::cout << ", " << file.tellg() << std::endl;
+        if(depth >= last_depth)
+        {
+            current = m_sdf_tree.append(current, obj);
+        }
+        else //if(depth < last_depth)
+        {
+            //walk tree upwards
+            for(int i = 0; i <= (last_depth - depth + 1); ++i)
+            {
+                current = m_sdf_tree.parent(current);
+            }
+            m_sdf_tree.append(current, obj);
+        }
 
-    UnloadFileData(data);
-
-    m_selected_sphere = -1;
-    m_needs_rebuild = true;
-    m_last_save = GetTime();
-}*/
+    }
+    file.close();
+}
 
 bool SDFCreator::loadShader(const Camera& camera, bool field_mode, float blend)
 {
@@ -219,12 +275,13 @@ void SDFCreator::unloadShader()
     }
 }
 
-/*void SDFCreator::exportObj()
+void SDFCreator::exportObj()
 {
     std::string shader_source{};
     shader_source += SHADER_VERSION_PREFIX;
+    shader_source += "\nfloat blend = 1;\n";
     shader_source += m_shader_files.getShaderPrefixFS();
-    appendMapFunction(shader_source, false, -1);
+    appendMapFunction(shader_source, false, nullptr);
     shader_source += m_shader_files.getSlicerBodyFS();
 
     Shader slicer_shader = LoadShaderFromMemory(vshader, shader_source.c_str());
@@ -237,17 +294,17 @@ void SDFCreator::unloadShader()
         {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max()},
         {-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(), -std::numeric_limits<float>::max()}};
 
-    for (int i = 0; i < m_objects.size(); i++)
+    for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
     {
         const float radius =
-            sqrtf(powf(m_objects[i].size.x, 2) + powf(m_objects[i].size.y, 2) + powf(m_objects[i].size.z, 2));
-        bounds.min.x = fminf(bounds.min.x, m_objects[i].pos.x - radius);
-        bounds.min.y = fminf(bounds.min.y, m_objects[i].pos.y - radius);
-        bounds.min.z = fminf(bounds.min.z, m_objects[i].pos.z - radius);
+            sqrtf(powf(i->size.x, 2) + powf(i->size.y, 2) + powf(i->size.z, 2));
+        bounds.min.x = fminf(bounds.min.x, i->pos.x - radius);
+        bounds.min.y = fminf(bounds.min.y, i->pos.y - radius);
+        bounds.min.z = fminf(bounds.min.z, i->pos.z - radius);
 
-        bounds.max.x = fmaxf(bounds.max.x, m_objects[i].pos.x + radius);
-        bounds.max.y = fmaxf(bounds.max.y, m_objects[i].pos.y + radius);
-        bounds.max.z = fmaxf(bounds.max.z, m_objects[i].pos.z + radius);
+        bounds.max.x = fmaxf(bounds.max.x, i->pos.x + radius);
+        bounds.max.y = fmaxf(bounds.max.y, i->pos.y + radius);
+        bounds.max.z = fmaxf(bounds.max.z, i->pos.z + radius);
     }
 
     // the marching cube sampling lattace must extend beyond the objects you want it to represent
@@ -344,7 +401,7 @@ void SDFCreator::unloadShader()
                                 (val4 < SDF_THRESHOLD) << 4 | (val5 < SDF_THRESHOLD) << 5 |
                                 (val6 < SDF_THRESHOLD) << 6 | (val7 < SDF_THRESHOLD) << 7;
 
-                /* Cube is entirely in/out of the surface #1#
+                /* Cube is entirely in/out of the surface #1#*/
                 if (edgeTable[cubeindex] == 0)
                     continue;
 
@@ -400,7 +457,7 @@ void SDFCreator::unloadShader()
 
     double duration = GetTime() - startTime;
     std::cout << std::format("export time {}ms. size: {}MB", duration * 1000, data_size / 1000000.f);
-}*/
+}
 
 void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
 {
@@ -417,17 +474,17 @@ void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
     int resolution_loc = GetShaderLocation(shader, "resolution");
     int blend_loc = GetShaderLocation(shader, "blend\0");
     int count = -1;
-   /*glGetProgramiv(shader.id, GL_ACTIVE_UNIFORMS, &count);
-    printf("Active Unifroms: %d\n", count);
-    for(int i = 0; i < count; ++i)
-    {
-        int length, size;
-        GLenum type;
-        char name[20];
-        glGetActiveUniform(shader.id, i, 20, &length, &size, &type, name);
-        printf("Unifrom #%d Type %u Name %s\n", i, type, name);
+    /*glGetProgramiv(shader.id, GL_ACTIVE_UNIFORMS, &count);
+     printf("Active Unifroms: %d\n", count);
+     for(int i = 0; i < count; ++i)
+     {
+         int length, size;
+         GLenum type;
+         char name[20];
+         glGetActiveUniform(shader.id, i, 20, &length, &size, &type, name);
+         printf("Unifrom #%d Type %u Name %s\n", i, type, name);
 
-    }*/
+     }*/
     SetShaderValue(shader, eye_loc, &camera.position, SHADER_UNIFORM_VEC3);
     SetShaderValue(shader, center_loc, &camera.target, SHADER_UNIFORM_VEC3);
     SetShaderValue(shader, resolution_loc, (float[2]){(float)GetScreenWidth(), (float)GetScreenHeight()},
@@ -439,20 +496,19 @@ void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
     {
         BeginShaderMode(shader);
         {
-             rlBegin(RL_QUADS);
-             rlTexCoord2f(x - 1, y - 1);
-             rlVertex2f(x - 1, y - 1);
+            rlBegin(RL_QUADS);
+            rlTexCoord2f(x - 1, y - 1);
+            rlVertex2f(x - 1, y - 1);
 
-             rlTexCoord2f(x - 1, y + 1);
-             rlVertex2f(x - 1, y + 1);
+            rlTexCoord2f(x - 1, y + 1);
+            rlVertex2f(x - 1, y + 1);
 
-             rlTexCoord2f(x + 1, y + 1);
-             rlVertex2f(x + 1, y + 1);
+            rlTexCoord2f(x + 1, y + 1);
+            rlVertex2f(x + 1, y + 1);
 
-             rlTexCoord2f(x + 1, y - 1);
-             rlVertex2f(x + 1, y - 1);
-             rlEnd();
-
+            rlTexCoord2f(x + 1, y - 1);
+            rlVertex2f(x + 1, y - 1);
+            rlEnd();
         }
         EndShaderMode();
     }
@@ -471,7 +527,7 @@ void SDFCreator::objectAtPixel(int x, int y, const Camera& camera)
     auto old_selected = m_selected_sphere;
     for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); i++)
     {
-        if (i->getIndex() == object_index)
+        if (i->index == (object_index - 1))
         {
             m_selected_sphere = i.simplify();
         }
@@ -509,17 +565,16 @@ std::optional<SDFIterator> SDFCreator::getSelected()
 }
 void SDFCreator::clear()
 {
-    const SDFObject root(SDFOperationType::NONE);
+    constexpr SDFObject root;
     m_sdf_tree.insert(root);
 }
 
 void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index, SDFObject* dynamic_index)
 {
-
-    //reset all sdf creation
+    // reset all sdf creation
     for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
     {
-        i->reset();
+        i->done = false;
     }
     std::string map;
     map += "uniform vec3 selectionValues[6];\n\n";
@@ -530,7 +585,6 @@ void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index,
 
     for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
     {
-        SDFObject s = *i;
         generateShaderContent(shader_content, i.simplify(), index_counter, use_color_as_index, dynamic_index);
     }
     map += shader_content.str();
@@ -546,7 +600,7 @@ void SDFCreator::appendMapFunction(std::string& result, bool use_color_as_index,
 void SDFCreator::generateShaderObject(std::stringstream& content, SDFIterator current, int& count,
                                       bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent)
 {
-    if (current->getObjectType() == SDFObjectType::NONE)
+    if (current->object_type == SDFObjectType::NONE)
     {
         return;
     }
@@ -561,13 +615,14 @@ void SDFCreator::generateShaderObject(std::stringstream& content, SDFIterator cu
     }
 
     uint8_t r = use_color_as_index ? (uint8_t)(count + 1) : current->color.r;
-    uint8_t g = use_color_as_index ? (uint8_t)(count>>8 ) : current->color.g;
-    uint8_t b = use_color_as_index ? (uint8_t)(count>>16) : current->color.b;
+    uint8_t g = use_color_as_index ? (uint8_t)(count >> 8) : current->color.g;
+    uint8_t b = use_color_as_index ? (uint8_t)(count >> 16) : current->color.b;
 
     content << "\tMin(\n\t\tvec4(\n";
-    switch (current->getObjectType())
+    switch (current->object_type)
     {
         case SDFObjectType::NONE:
+
             break;
         case SDFObjectType::ROUND_BOX:
             content << "sdRoundBox(";
@@ -709,7 +764,7 @@ void SDFCreator::generateShaderObject(std::stringstream& content, SDFIterator cu
 void SDFCreator::generateShaderOperation(std::stringstream& content, SDFIterator current, int count,
                                          bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent)
 {
-    if (current->getOperationType() == SDFOperationType::NONE)
+    if (current->operation_type == SDFOperationType::NONE)
     {
         return;
     }
@@ -723,7 +778,7 @@ void SDFCreator::generateShaderOperation(std::stringstream& content, SDFIterator
         {
             content << "distance = Min(";
         }
-        switch (current->getOperationType())
+        switch (current->operation_type)
         {
             default:
                 TraceLog(LOG_ERROR, "Cant perform operation with this count of childs %i",
@@ -764,7 +819,7 @@ void SDFCreator::generateShaderOperation(std::stringstream& content, SDFIterator
     }
     if (m_sdf_tree.children(current) == 1)
     {
-        if(current->getOperationType() != SDFOperationType::ROUND || current->getOperationType() !=SDFOperationType::ONION)
+        if (current->operation_type != SDFOperationType::ROUND || current->operation_type != SDFOperationType::ONION)
         {
             return;
         }
@@ -777,7 +832,7 @@ void SDFCreator::generateShaderOperation(std::stringstream& content, SDFIterator
         {
             content << "distance = Min(";
         }
-        switch (current->getOperationType())
+        switch (current->operation_type)
         {
             default:
                 TraceLog(LOG_ERROR, "Cant perform operation with this count of childs %i",
@@ -807,12 +862,12 @@ void SDFCreator::generateShaderOperation(std::stringstream& content, SDFIterator
 void SDFCreator::generateShaderContent(std::stringstream& content, SDFIterator current, int& count,
                                        bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent)
 {
-    current->m_index = count;
+    current->index = count;
     count++;
-    if (current->isDone())
+    if (current->done)
         return;
-    current->done();
-    switch (current->getType())
+    current->done = true;
+    switch (current->type)
     {
         case SDFType::OBJECT:
             generateShaderObject(content, current, count, use_color_as_index, dynamic_index, with_parent);
@@ -821,4 +876,9 @@ void SDFCreator::generateShaderContent(std::stringstream& content, SDFIterator c
             generateShaderOperation(content, current, count, use_color_as_index, dynamic_index, with_parent);
             break;
     }
+}
+
+stlplus::ntree<SDFObject>& SDFCreator::getTree()
+{
+    return m_sdf_tree;
 }

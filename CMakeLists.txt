@@ -13,7 +13,6 @@ set(SHAPE_UP_SOURCE
         include/SDFCreator.h
         src/SDFCreator.cpp
         include/SDFObject.h
-        src/SDFObject.cpp
         include/SDFTypes.h
         include/SDFUtil.h
 )
@@ -22,4 +21,4 @@ add_executable(ShapeUp
         ${SHAPE_UP_SOURCE})
 
 target_include_directories(ShapeUp PUBLIC ./include)
-target_link_libraries(ShapeUp raylib raylibImGui imgui raygui stlplus_containers)
+target_link_libraries(ShapeUp raylib raylibImGui imgui stlplus_containers)

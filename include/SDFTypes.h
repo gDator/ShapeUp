@@ -3,7 +3,7 @@
 
 #include <unordered_map>
 #include <vector>
-enum class SDFObjectType
+enum class SDFObjectType : int
 {
     NONE,
     ROUND_BOX,
@@ -38,7 +38,7 @@ enum class SDFObjectType
     // QUAD
 };
 
-enum class SDFOperationType
+enum class SDFOperationType : int
 {
     NONE,
     SMOOTH_UNION,
@@ -50,7 +50,7 @@ enum class SDFOperationType
     SUBSTRACTION,
     INTERSECTION,
 };
-enum class SDFType
+enum class SDFType : int
 {
     OBJECT,
     OPERATION

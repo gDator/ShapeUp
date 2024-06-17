@@ -2,6 +2,7 @@
 #define SDFUTIL_H
 
 #include "raylib.h"
+#include "raymath.h"
 static int RayPlaneIntersection(const Vector3 RayOrigin, const Vector3 RayDirection, const Vector3 PlanePoint,
                                      const Vector3 PlaneNormal, Vector3* IntersectionPoint)
 {
@@ -24,10 +25,7 @@ static int RayPlaneIntersection(const Vector3 RayOrigin, const Vector3 RayDirect
 
     return 1;
 }
-stlplus::ntree<SDFObject>& SDFCreator::getTree()
-{
-    return m_sdf_tree;
-}
+
 
 static Vector3 WorldToCamera(Vector3 worldPos, Matrix cameraMatrix)
 {
