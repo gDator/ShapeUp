@@ -73,6 +73,7 @@ private:
     void generateShaderObject(std::stringstream& content, SDFIterator current, int& count, bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent = false);
     void generateShaderOperation(std::stringstream& content, SDFIterator current, int count, bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent = false);
     void generateShaderContent(std::stringstream& content, SDFIterator current, int& count, bool use_color_as_index, const SDFObject* dynamic_index, bool with_parent = false);
+    static RenderTexture2D LoadFloatRenderTexture(int width, int height);
     static constexpr const char* vshader = SHADER_VERSION_PREFIX "\n in vec3 vertexPosition;    \n"
                                             "in vec2 vertexTexCoord;            \n"
                                             "out vec2 fragTexCoord;             \n"

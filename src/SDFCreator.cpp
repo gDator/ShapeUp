@@ -331,9 +331,9 @@ void SDFCreator::exportObj()
 
     RenderTexture2D sliceTexture[2];
     sliceTexture[0] =
-        LoadRenderTexture(slice_count_x, slice_count_y); // LoadFloatRenderTexture(slice_count_x, slice_count_y);
+        LoadFloatRenderTexture(slice_count_x, slice_count_y); // LoadFloatRenderTexture(slice_count_x, slice_count_y);
     sliceTexture[1] =
-        LoadRenderTexture(slice_count_x, slice_count_y); // LoadFloatRenderTexture(slice_count_x, slice_count_y);
+        LoadFloatRenderTexture(slice_count_x, slice_count_y); // LoadFloatRenderTexture(slice_count_x, slice_count_y);
 
     for (int z_index = 0; z_index < slice_count_z - 1; z_index++)
     {
@@ -363,12 +363,10 @@ void SDFCreator::exportObj()
             }
             EndTextureMode();
         }
-
-        float* pixels = reinterpret_cast<float*>(
-            rlReadTexturePixels(sliceTexture[0].texture.id, sliceTexture[0].texture.width,
+        float* pixels = reinterpret_cast<float*>(rlReadTexturePixels(sliceTexture[0].texture.id, sliceTexture[0].texture.width,
                                 sliceTexture[0].texture.height, sliceTexture[0].texture.format));
-        float* pixels2 = reinterpret_cast<float*>(
-            rlReadTexturePixels(sliceTexture[1].texture.id, sliceTexture[1].texture.width,
+        float* pixels2 =
+            reinterpret_cast<float*>(rlReadTexturePixels(sliceTexture[1].texture.id, sliceTexture[1].texture.width,
                                 sliceTexture[1].texture.height, sliceTexture[1].texture.format));
 
 #define SDF_THRESHOLD (0)
@@ -390,7 +388,6 @@ void SDFCreator::exportObj()
                 Vector4 v1 = {v0.x + x_step, v0.y, v0.z, val1};
                 Vector4 v2 = {v0.x + x_step, v0.y + y_step, v0.z, val2};
                 Vector4 v3 = {v0.x, v0.y + y_step, v0.z, val3};
-
                 Vector4 v4 = {v0.x, v0.y, v0.z + z_step, val4};
                 Vector4 v5 = {v0.x + x_step, v0.y, v0.z + z_step, val5};
                 Vector4 v6 = {v0.x + x_step, v0.y + y_step, v0.z + z_step, val6};
@@ -451,7 +448,7 @@ void SDFCreator::exportObj()
     UnloadRenderTexture(sliceTexture[0]);
     UnloadRenderTexture(sliceTexture[1]);
 
-    SaveFileData("export.obj", (void*)(data.c_str()), data_size);
+    SaveFileData("export.obj", (void*)(data.c_str()), data.size());
 
     UnloadShader(slicer_shader);
 
@@ -881,4 +878,35 @@ void SDFCreator::generateShaderContent(std::stringstream& content, SDFIterator c
 stlplus::ntree<SDFObject>& SDFCreator::getTree()
 {
     return m_sdf_tree;
+}
+
+RenderTexture2D SDFCreator::LoadFloatRenderTexture(int width, int height)
+{
+    RenderTexture2D target = LoadRenderTexture(width, height);
+
+    if (target.id > 0)
+    {
+        rlEnableFramebuffer(target.id);
+
+        target.texture.format = PIXELFORMAT_UNCOMPRESSED_R32;
+        target.texture.id = rlLoadTexture(NULL, width, height, target.texture.format, 1);
+        target.texture.width = width;
+        target.texture.height = height;
+        target.texture.mipmaps = 1;
+
+        // Attach color texture and depth renderbuffer/texture to FBO
+        rlFramebufferAttach(target.id, target.texture.id, RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_TEXTURE2D, 0);
+
+        // if (rlFramebufferComplete(target.id)) {
+        //     LOG_TRACE(LOG_ERROR, "FBO: [ID %i] Framebuffer object created successfully", target.id);
+        // }
+        // else {
+        //     LOG_TRACE(LOG_ERROR, "FBO: [ID %i] Framebuffer object FAILED", target.id);
+        // }
+
+        rlDisableFramebuffer();
+    }
+    else TRACELOG(LOG_WARNING, "FBO: Framebuffer object can not be created");
+
+    return target;
 }
