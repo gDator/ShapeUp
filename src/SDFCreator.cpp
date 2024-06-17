@@ -324,9 +324,7 @@ void SDFCreator::exportObj()
     const float y_step = (bounds.max.y - bounds.min.y) / (slice_count_y - 1);
     const float z_step = (bounds.max.z - bounds.min.z) / (slice_count_z - 1);
 
-    int data_capacity = 400000000;
     std::string data = "";
-    data.resize(data_capacity);
     int data_size = 0;
 
     RenderTexture2D sliceTexture[2];
