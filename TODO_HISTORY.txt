@@ -9,15 +9,17 @@ HISTORY - BUGFIXES
 =======================================================================
 v0.1
 + 2024/06/08: created CMake project and ported to windows
-
++ 2024/06/18: added export function to .ply
 BUGS
 =======================================================================
-- 20240615-1: SDFCreator.cpp:521: appendMapFunction: reset moved from rebuildShaders to here otherwise SDF of SelectionShader is empty
-- 20240617-1: SDFCreator.cpp: Root node doesnt get created.
++ 20240615-1: SDFCreator.cpp:521: appendMapFunction: reset moved from rebuildShaders to here otherwise SDF of SelectionShader is empty
++ 20240617-1: SDFCreator.cpp: Root node doesnt get created.
+- 20240618-1: shader_prefix.fs: Substraction does not work properly
+- 20240618-1: SDFCreator.cpp: saving/loading completly bugged
 
 TODO
 =======================================================================
 --------------------------------v0.0-----------------------------------
-- boolean operations on different shapes
++ boolean operations on different shapes
 - scaleable code structure
-- implement all "basic" sdf functions (s. https://iquilezles.org/)
++ implement all "basic" sdf functions (s. https://iquilezles.org/)

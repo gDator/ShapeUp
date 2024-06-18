@@ -28,7 +28,7 @@ public:
     //TODO: export, save, open
     void save(std::filesystem::path path);
     void load(std::filesystem::path path);
-    void exportObj();
+    void exportPly(std::filesystem::path path, float cube_resolution = 0.005);
     bool loadShader(const Camera& camera, bool field_mode = false, float blend = 0.5);
     void unloadShader();
     void loadData() const;

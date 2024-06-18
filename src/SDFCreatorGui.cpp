@@ -15,7 +15,7 @@
 SDFCreatorGui::SDFCreatorGui()
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE);
-    InitWindow(m_screen_width, m_screen_height, "Sudoku");
+    InitWindow(m_screen_width, m_screen_height, "ShapeUp");
     SetTargetFPS(144);
     rlImGuiSetup(true);
     ImGuiIO io = ImGui::GetIO();
@@ -79,6 +79,7 @@ void SDFCreatorGui::run()
 }
 void SDFCreatorGui::drawGui()
 {
+    static float export_resolution = 0.01;
     /*if (ImGui::Begin("View"))
     {
         ImVec2 size = ImGui::GetWindowSize();
@@ -108,8 +109,9 @@ void SDFCreatorGui::drawGui()
         ImGui::SameLine();
         if (ImGui::Button("Export"))
         {
-            m_sdf_creator.exportObj();
+            m_sdf_creator.exportPly("./export.ply", export_resolution);
         }
+        ImGui::InputFloat("Export Resolution", &export_resolution, 0.0001, 1);
         if (ImGui::Button("Clear"))
         {
             m_sdf_creator.clear();

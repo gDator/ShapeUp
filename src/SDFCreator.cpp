@@ -4,6 +4,7 @@
 #include "SDFCreator.h"
 
 #include "SDFUtil.h"
+#include "Vertex.h"
 #include "raylib.h"
 #include "rlgl.h"
 #include <cassert>
@@ -121,9 +122,8 @@ void SDFCreator::addShape(Color color)
 
 void SDFCreator::save(std::filesystem::path path)
 {
-    std::ofstream file(path, std::ios::binary);
+    std::fstream file(path, std::ios::binary | std::ios::out);
     const unsigned int SERALIZE_VERSION = 1;
-
 
     // save version and each object plus its level mount of objects into file
     file << SERALIZE_VERSION;
@@ -138,15 +138,15 @@ void SDFCreator::save(std::filesystem::path path)
 
 void SDFCreator::load(std::filesystem::path path)
 {
-    if(!std::filesystem::exists(path))
+    if (!std::filesystem::exists(path))
     {
         TraceLog(LOG_ERROR, "File does not exist");
         return;
     }
-    std::ifstream file(path, std::ios::binary);
+    std::fstream file(path, std::ios::binary | std::ios::in);
     unsigned int serialize_version = 0;
 
-    if(!file.is_open())
+    if (!file.is_open())
     {
         TraceLog(LOG_ERROR, "Could not open file");
     }
@@ -160,14 +160,14 @@ void SDFCreator::load(std::filesystem::path path)
     }
 
     m_sdf_tree.erase();
-    //read node
-    if(!file.eof())
+    // read node
+    if (!file.eof())
     {
         int depth = 0;
         SDFObject obj;
         file >> depth;
         file >> obj;
-        if(depth != 0)
+        if (depth != 0)
         {
             TraceLog(LOG_ERROR, "File corupt. No Root exists.");
             return;
@@ -183,22 +183,21 @@ void SDFCreator::load(std::filesystem::path path)
         SDFObject obj;
         file >> depth;
         file >> obj;
-        std::cout << "Read" <<obj.index;
+        std::cout << "Read" << obj.index;
         std::cout << ", " << file.tellg() << std::endl;
-        if(depth >= last_depth)
+        if (depth >= last_depth)
         {
             current = m_sdf_tree.append(current, obj);
         }
-        else //if(depth < last_depth)
+        else // if(depth < last_depth)
         {
-            //walk tree upwards
-            for(int i = 0; i <= (last_depth - depth + 1); ++i)
+            // walk tree upwards
+            for (int i = 0; i <= (last_depth - depth + 1); ++i)
             {
                 current = m_sdf_tree.parent(current);
             }
             m_sdf_tree.append(current, obj);
         }
-
     }
     file.close();
 }
@@ -275,8 +274,13 @@ void SDFCreator::unloadShader()
     }
 }
 
-void SDFCreator::exportObj()
+void SDFCreator::exportPly(std::filesystem::path path, float cube_resolution)
 {
+    if(cube_resolution < 0.0001)
+    {
+        cube_resolution = 0.0001;
+    }
+    std::fstream file(path, std::ios::out);
     std::string shader_source{};
     shader_source += SHADER_VERSION_PREFIX;
     shader_source += "\nfloat blend = 1;\n";
@@ -288,7 +292,6 @@ void SDFCreator::exportObj()
     int slicer_z_loc = GetShaderLocation(slicer_shader, "z");
 
     double startTime = GetTime();
-    const float cube_resolution = 0.03;
 
     BoundingBox bounds = {
         {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max()},
@@ -296,8 +299,11 @@ void SDFCreator::exportObj()
 
     for (auto i = m_sdf_tree.prefix_begin(); i != m_sdf_tree.prefix_end(); ++i)
     {
-        const float radius =
-            sqrtf(powf(i->size.x, 2) + powf(i->size.y, 2) + powf(i->size.z, 2));
+        if(i->type == SDFType::OPERATION)
+        {
+            continue;
+        }
+        const float radius = sqrtf(powf(i->size.x, 2) + powf(i->size.y, 2) + powf(i->size.z, 2));
         bounds.min.x = fminf(bounds.min.x, i->pos.x - radius);
         bounds.min.y = fminf(bounds.min.y, i->pos.y - radius);
         bounds.min.z = fminf(bounds.min.z, i->pos.z - radius);
@@ -324,7 +330,6 @@ void SDFCreator::exportObj()
     const float y_step = (bounds.max.y - bounds.min.y) / (slice_count_y - 1);
     const float z_step = (bounds.max.z - bounds.min.z) / (slice_count_z - 1);
 
-    std::string data = "";
     int data_size = 0;
 
     RenderTexture2D sliceTexture[2];
@@ -333,6 +338,8 @@ void SDFCreator::exportObj()
     sliceTexture[1] =
         LoadFloatRenderTexture(slice_count_x, slice_count_y); // LoadFloatRenderTexture(slice_count_x, slice_count_y);
 
+    std::vector<Vertex> vertecies;
+    std::string data;
     for (int z_index = 0; z_index < slice_count_z - 1; z_index++)
     {
         for (int side = 0; side < 2; side++)
@@ -361,10 +368,11 @@ void SDFCreator::exportObj()
             }
             EndTextureMode();
         }
-        float* pixels = reinterpret_cast<float*>(rlReadTexturePixels(sliceTexture[0].texture.id, sliceTexture[0].texture.width,
+        float* pixels = reinterpret_cast<float*>(
+            rlReadTexturePixels(sliceTexture[0].texture.id, sliceTexture[0].texture.width,
                                 sliceTexture[0].texture.height, sliceTexture[0].texture.format));
-        float* pixels2 =
-            reinterpret_cast<float*>(rlReadTexturePixels(sliceTexture[1].texture.id, sliceTexture[1].texture.width,
+        float* pixels2 = reinterpret_cast<float*>(
+            rlReadTexturePixels(sliceTexture[1].texture.id, sliceTexture[1].texture.width,
                                 sliceTexture[1].texture.height, sliceTexture[1].texture.format));
 
 #define SDF_THRESHOLD (0)
@@ -372,14 +380,14 @@ void SDFCreator::exportObj()
         {
             for (int x_index = 0; x_index < slice_count_x - 1; x_index++)
             {
-                float val0 = pixels[(x_index + y_index * slice_count_x) * 1];
-                float val1 = pixels[(x_index + 1 + y_index * slice_count_x) * 1];
-                float val2 = pixels[(x_index + 1 + (y_index + 1) * slice_count_x) * 1];
-                float val3 = pixels[(x_index + (y_index + 1) * slice_count_x) * 1];
-                float val4 = pixels2[(x_index + y_index * slice_count_x) * 1];
-                float val5 = pixels2[(x_index + 1 + y_index * slice_count_x) * 1];
-                float val6 = pixels2[(x_index + 1 + (y_index + 1) * slice_count_x) * 1];
-                float val7 = pixels2[(x_index + (y_index + 1) * slice_count_x) * 1];
+                float val0 = pixels[(x_index + y_index * slice_count_x) * 4];
+                float val1 = pixels[(x_index + 1 + y_index * slice_count_x) * 4];
+                float val2 = pixels[(x_index + 1 + (y_index + 1) * slice_count_x) * 4];
+                float val3 = pixels[(x_index + (y_index + 1) * slice_count_x) * 4];
+                float val4 = pixels2[(x_index + y_index * slice_count_x) * 4];
+                float val5 = pixels2[(x_index + 1 + y_index * slice_count_x) * 4];
+                float val6 = pixels2[(x_index + 1 + (y_index + 1) * slice_count_x) * 4];
+                float val7 = pixels2[(x_index + (y_index + 1) * slice_count_x) * 4];
 
                 Vector4 v0 = {bounds.min.x + x_index * x_step, bounds.min.y + y_index * y_step,
                               bounds.min.z + z_index * z_step, val0};
@@ -431,10 +439,27 @@ void SDFCreator::exportObj()
                     for (int v = 0; v < 3; v++)
                     {
                         Vector3 pt = vertlist[triTable[cubeindex][i + v]];
-                        data += std::format("v {} {} {}\n", pt.x, -pt.y, pt.z);
-                    }
+                        Vertex vert{};
+                        vert.vertex.x = pt.x;
+                        vert.vertex.y = -pt.y;
+                        vert.vertex.z = pt.z;
+                        vert.color.r =
+                            static_cast<unsigned char>((pixels[(x_index + y_index * slice_count_x) * 4 + 1] +
+                                                        pixels2[(x_index + y_index * slice_count_x) * 4 + 1]) /
+                                                       2 * 255);
+                        vert.color.g =
+                            static_cast<unsigned char>((pixels[(x_index + y_index * slice_count_x) * 4 + 2] +
+                                                        pixels2[(x_index + y_index * slice_count_x) * 4 + 2]) /
+                                                       2 * 255);
+                        vert.color.b =
+                            static_cast<unsigned char>((pixels[(x_index + y_index * slice_count_x) * 4 + 3] +
+                                                        pixels2[(x_index + y_index * slice_count_x) * 4 + 3]) /
+                                                       2 * 255);
+                        vertecies.push_back(vert);
+                        //data += std::format("v {} {} {}\n", pt.x, -pt.y, pt.z);
 
-                    data += "f -2  -1 -3\n";
+                    }
+                    //data += "f -2  -1 -3\n";
                 }
             }
         }
@@ -442,11 +467,41 @@ void SDFCreator::exportObj()
         std::free(pixels);
         std::free(pixels2);
     }
+    if (vertecies.size() % 3 != 0)
+    {
+        TraceLog(LOG_ERROR, "Somthing went wrong. Wrong amount of vertecies");
+        return;
+    }
+    file << "ply\n"
+           "format ascii 1.0"
+            "comment created with ShapeUp\n"
+           "element vertex " +
+           std::to_string(vertecies.size()) +
+           "\n"
+           "property float x\n"
+           "property float y\n"
+           "property float z\n"
+           "property uint8 red\n"
+           "property uint8 green\n"
+           "property uint8 blue\n"
+           "element face " +
+           std::to_string(vertecies.size() / 3) +
+           "\n" // all 3 vertecies build color
+           "property list uint8 int32 vertex_indices\n"
+           "end_header\n";
+    for (auto& v : vertecies)
+    {
+        file << std::format("{} {} {} {} {} {}\n", v.vertex.x, v.vertex.y, v.vertex.z, v.color.r, v.color.g, v.color.b);
+    }
+    for (int i = 0; i < vertecies.size(); i += 3)
+    {
+        file << std::format("3 {} {} {}\n", i+1, i + 2, i);
+    }
 
     UnloadRenderTexture(sliceTexture[0]);
     UnloadRenderTexture(sliceTexture[1]);
 
-    SaveFileData("export.obj", (void*)(data.c_str()), data.size());
+    file.close();
 
     UnloadShader(slicer_shader);
 
@@ -886,7 +941,7 @@ RenderTexture2D SDFCreator::LoadFloatRenderTexture(int width, int height)
     {
         rlEnableFramebuffer(target.id);
 
-        target.texture.format = PIXELFORMAT_UNCOMPRESSED_R32;
+        target.texture.format = PIXELFORMAT_UNCOMPRESSED_R32G32B32A32; // PIXELFORMAT_UNCOMPRESSED_R32;
         target.texture.id = rlLoadTexture(NULL, width, height, target.texture.format, 1);
         target.texture.width = width;
         target.texture.height = height;
@@ -904,7 +959,8 @@ RenderTexture2D SDFCreator::LoadFloatRenderTexture(int width, int height)
 
         rlDisableFramebuffer();
     }
-    else TRACELOG(LOG_WARNING, "FBO: Framebuffer object can not be created");
+    else
+        TRACELOG(LOG_WARNING, "FBO: Framebuffer object can not be created");
 
     return target;
 }

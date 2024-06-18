@@ -15,6 +15,7 @@ set(SHAPE_UP_SOURCE
         include/SDFObject.h
         include/SDFTypes.h
         include/SDFUtil.h
+        include/Vertex.h
 )
 add_subdirectory(./vendor)
 add_executable(ShapeUp
